@@ -306,3 +306,117 @@ checker_texture stores:
 - odd texture
 
 This demonstrates composability of texture systems.
+
+---
+
+# 9. Procedural Textures — Checker Pattern
+
+## Motivation
+
+Constant color is unrealistic.
+We introduce spatial variation using procedural math.
+
+---
+
+## Checker Texture
+
+A checker pattern is created using:
+
+    s = sin(10x) * sin(10y) * sin(10z)
+
+If s < 0:
+    use odd texture
+Else:
+    use even texture
+
+This creates a 3D alternating pattern.
+
+---
+
+## Design Pattern
+
+checker_texture contains two textures:
+
+- even
+- odd
+
+Textures are composable.
+
+Material → Texture → Color
+
+This decouples surface appearance from material logic.
+
+---
+
+## Architectural Upgrade
+
+We transitioned from:
+
+    material → constant color
+
+to:
+
+    material → texture abstraction → color
+
+This enables:
+- Checker textures
+- Perlin noise
+- Image textures
+- Procedural materials
+
+---
+
+# 10. Perlin Noise
+
+## Motivation
+
+Checker patterns are artificial.
+Natural materials exhibit smooth stochastic variation.
+
+Perlin noise provides coherent randomness.
+
+Unlike pure random numbers,
+Perlin noise is spatially correlated.
+
+---
+
+# 11. Perlin Noise — Core Idea
+
+Perlin noise generates smooth, coherent randomness.
+
+Unlike pure random values, nearby points produce similar outputs.
+
+---
+
+## Structure
+
+Perlin noise consists of:
+
+- A 3D lattice grid
+- Random gradient vectors at lattice points
+- A permutation table
+- Smooth interpolation between gradients
+
+---
+
+## Why Needed
+
+Used for:
+- Marble
+- Wood
+- Clouds
+- Organic surface variation
+
+It provides natural-looking stochastic patterns.
+
+---
+
+## Perlin Class Structure
+
+Stores:
+
+- 256 random gradient vectors
+- 3 permutation tables (x, y, z)
+
+Permutation tables are used to hash lattice coordinates
+into pseudo-random gradient indices.
