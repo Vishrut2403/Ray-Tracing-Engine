@@ -42,6 +42,16 @@ int main() {
         color(0.7, 0.3, 0.3)
     );
 
+    auto material_left = std::make_shared<metal>(
+        color(0.8, 0.8, 0.8),
+        0.0
+    );
+
+    auto material_right = std::make_shared<metal>(
+        color(0.8, 0.6, 0.2),
+        0.3
+    );
+
     const auto aspect_ratio = 16.0 / 9.0;
     const int image_width = 400;
     const int image_height = static_cast<int>(image_width / aspect_ratio);
@@ -63,6 +73,18 @@ int main() {
         point3(0, 0, -1),
         0.5,
         material_center
+    ));
+
+    world.add(std::make_shared<sphere>(
+        point3(-1, 0, -1),
+        0.5,
+        material_left
+    ));
+
+    world.add(std::make_shared<sphere>(
+        point3(1, 0, -1),
+        0.5,
+        material_right
     ));
 
     // Camera
