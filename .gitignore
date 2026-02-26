@@ -4,3 +4,6 @@ build/
 *.o
 *.obj
 *.ppm
+render
+test
+.vscode/
