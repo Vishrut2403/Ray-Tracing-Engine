@@ -2,6 +2,7 @@
 #define TEXTURE_H
 
 #include "rtweekend.h"
+#include "perlin.h"
 
 class texture {
 public:
@@ -66,6 +67,27 @@ public:
 private:
     std::shared_ptr<texture> even;
     std::shared_ptr<texture> odd;
+};
+
+class noise_texture : public texture {
+public:
+    noise_texture() : scale(1) {}
+    noise_texture(double sc) : scale(sc) {}
+
+    virtual color value(
+        double u,
+        double v,
+        const point3& p
+    ) const override {
+
+        return color(1,1,1) *
+               0.5 *
+               (1 + noise.noise(scale * p));
+    }
+
+private:
+    perlin noise;
+    double scale;
 };
 
 #endif

@@ -481,3 +481,52 @@ Noise value is weighted sum of:
 from the 8 surrounding lattice corners.
 
 This produces smooth coherent noise.
+
+---
+
+# 15. Noise Texture
+
+## Motivation
+
+Perlin noise generates scalar values.
+We must convert it into a texture usable by materials.
+
+---
+
+## Design
+
+noise_texture contains:
+
+- A perlin noise generator
+- A scale factor
+
+It evaluates:
+
+    noise(scale * p)
+
+This allows frequency control.
+
+---
+
+## Frequency Control
+
+Higher scale:
+    More rapid variation
+
+Lower scale:
+    Smooth large-scale variation
+
+---
+
+## Noise Texture Implementation
+
+noise_texture wraps the perlin class.
+
+Color output:
+
+    0.5 * (1 + noise(p))
+
+This maps noise from [-1,1] to [0,1].
+
+Result:
+Grayscale procedural texture.
