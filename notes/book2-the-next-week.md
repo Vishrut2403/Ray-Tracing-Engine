@@ -447,3 +447,37 @@ Hashing approach:
     perm_x[x] ^ perm_y[y] ^ perm_z[z]
 
 This produces deterministic pseudo-random gradient selection.
+
+---
+
+# 14. Perlin Interpolation
+
+## Hermite Smoothing
+
+We apply smoothstep:
+
+    f(t) = t²(3 − 2t)
+
+This ensures smooth derivatives at lattice boundaries.
+
+---
+
+## Gradient Influence
+
+For each corner:
+
+1. Compute vector from corner to sample point.
+2. Take dot product with gradient vector.
+3. Blend contributions via trilinear interpolation.
+
+---
+
+## Final Formula
+
+Noise value is weighted sum of:
+
+    dot(gradient, offset_vector)
+
+from the 8 surrounding lattice corners.
+
+This produces smooth coherent noise.
