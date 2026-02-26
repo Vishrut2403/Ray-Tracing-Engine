@@ -233,3 +233,76 @@ Final:
 
 Renders are stored locally and not pushed to GitHub.
 They are reproducible and regeneratable.
+
+---
+
+# 7. Texture Abstraction
+
+## Motivation
+
+Constant color is insufficient for realism.
+
+We abstract surface color into a polymorphic texture system.
+
+---
+
+## Texture Interface
+
+```cpp
+class texture {
+public:
+    virtual color value(
+        double u,
+        double v,
+        const point3& p
+    ) const = 0;
+};
+```
+
+Textures may represent:
+
+- Solid color
+- Checker pattern
+- Procedural noise
+- Image maps
+
+Materials now depend on textures,
+not fixed colors.
+
+---
+
+# 8. Checker Texture
+
+## Motivation
+
+Introduce spatially varying surface color without using images.
+
+---
+
+## Principle
+
+We alternate between two textures based on position.
+
+Let:
+
+    s = sin(10x) * sin(10y) * sin(10z)
+
+If s < 0:
+    use odd texture
+Else:
+    use even texture
+
+This creates a 3D checker pattern.
+
+---
+
+## Key Idea
+
+Textures can contain other textures.
+
+checker_texture stores:
+
+- even texture
+- odd texture
+
+This demonstrates composability of texture systems.
