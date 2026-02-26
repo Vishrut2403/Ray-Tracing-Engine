@@ -1,6 +1,6 @@
 # Chapter 7 – Hittable Abstraction
 
-## Why We Refactored
+## Why Refactored
 
 Hardcoding sphere intersection does not scale.
 

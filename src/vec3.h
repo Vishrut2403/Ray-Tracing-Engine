@@ -108,10 +108,6 @@ inline vec3 unit_vector(const vec3& v) {
     return v / v.length();
 }
 
-inline double random_double() {
-    return rand() / (RAND_MAX + 1.0);
-}
-
 inline vec3 random_in_unit_sphere() {
     while (true) {
         vec3 p(
@@ -123,12 +119,6 @@ inline vec3 random_in_unit_sphere() {
         if (p.length_squared() >= 1) continue;
         return p;
     }
-}
-
-inline double clamp(double x, double min, double max) {
-    if (x < min) return min;
-    if (x > max) return max;
-    return x;
 }
 
 inline vec3 reflect(const vec3& v, const vec3& n) {
@@ -148,4 +138,18 @@ inline double reflectance(double cosine, double ref_idx) {
     return r0 + (1 - r0) * pow((1 - cosine), 5);
 }
 
+inline vec3 random_in_unit_disk() {
+    while (true) {
+        auto p = vec3(
+            random_double(-1,1),
+            random_double(-1,1),
+            0
+        );
+
+        if (p.length_squared() >= 1)
+            continue;
+
+        return p;
+    }
+}
 #endif
