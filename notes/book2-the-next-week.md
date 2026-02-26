@@ -530,3 +530,52 @@ This maps noise from [-1,1] to [0,1].
 
 Result:
 Grayscale procedural texture.
+
+---
+
+# 16. Turbulence
+
+## Motivation
+
+Raw Perlin noise looks cloudy but flat.
+
+We introduce turbulence to create layered complexity.
+
+---
+
+## Definition
+
+Turbulence is a sum of absolute-value noise at increasing frequencies:
+
+    turb(p) =
+        |noise(p)|
+      + 0.5 * |noise(2p)|
+      + 0.25 * |noise(4p)|
+      + ...
+
+Each octave:
+- Frequency doubles
+- Amplitude halves
+
+This creates fractal detail.
+
+---
+
+## Why Absolute Value?
+
+Absolute value prevents cancellation.
+It creates sharper, vein-like patterns.
+
+---
+
+## Turbulence Implementation
+
+We sum multiple octaves of noise.
+
+Each octave:
+- Doubles spatial frequency
+- Halves amplitude
+
+This produces fractal detail.
+
+Used to simulate marble, wood, clouds.
