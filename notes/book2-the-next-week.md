@@ -420,3 +420,30 @@ Stores:
 
 Permutation tables are used to hash lattice coordinates
 into pseudo-random gradient indices.
+
+---
+
+# 12. Perlin — Constructor and Permutation Tables
+
+## Gradient Vectors
+
+256 random unit vectors are generated.
+These represent gradient directions at lattice points.
+
+---
+
+## Permutation Tables
+
+Three permutation arrays (x, y, z) are created.
+
+They:
+
+- Contain shuffled values 0–255
+- Act as hash tables
+- Map lattice coordinates to gradient indices
+
+Hashing approach:
+
+    perm_x[x] ^ perm_y[y] ^ perm_z[z]
+
+This produces deterministic pseudo-random gradient selection.
