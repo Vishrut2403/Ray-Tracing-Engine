@@ -113,10 +113,9 @@ int main() {
               << image_width << " "
               << image_height << "\n255\n";
 
-    // World (FINAL SCENE)
     auto world = random_scene();
 
-    // Camera (Depth of Field)
+    // Camera
     point3 lookfrom(13,2,3);
     point3 lookat(0,0,0);
     vec3 vup(0,1,0);
@@ -131,7 +130,9 @@ int main() {
         20,
         aspect_ratio,
         aperture,
-        dist_to_focus
+        dist_to_focus,
+        0.0,
+        1.0
     );
 
     // Render
