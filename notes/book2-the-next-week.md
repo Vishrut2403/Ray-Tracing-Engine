@@ -592,3 +592,55 @@ The sine wave creates stripes.
 Turbulence distorts stripes into veins.
 
 This produces realistic marble-like appearance.
+
+---
+
+# 18. Image Textures
+
+## Motivation
+
+Procedural textures are powerful, but real-world surfaces
+require image data (e.g., Earth maps).
+
+We map 2D images onto 3D surfaces using UV coordinates.
+
+---
+
+## UV Mapping
+
+Each hit point provides:
+
+    u ∈ [0,1]
+    v ∈ [0,1]
+
+These correspond to pixel coordinates:
+
+    i = u * width
+    j = (1 - v) * height
+
+We flip v because image origin is top-left.
+
+---
+
+## Concept
+
+texture(u, v, p) → lookup pixel → return color
+
+This allows:
+- Planet rendering
+- Decals
+- Photorealistic materials
+
+---
+
+## Image Texture Implementation
+
+We use stb_image to load JPEG/PNG.
+
+Steps:
+1. Load raw pixel buffer
+2. Convert UV to pixel indices
+3. Clamp to image bounds
+4. Scale from 0–255 to 0–1
+
+If load fails → return cyan debug color.
