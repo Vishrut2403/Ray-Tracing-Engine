@@ -1,6 +1,6 @@
 # Chapter 11 – Anti-Aliasing & Gamma Correction
 
-## What We Added
+## What is Added
 
 - Multiple samples per pixel
 - Random subpixel jitter

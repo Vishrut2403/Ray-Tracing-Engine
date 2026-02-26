@@ -34,6 +34,8 @@ color ray_color(const ray& r, const hittable& world, int depth) {
 
 int main() {
     
+    auto material_glass = std::make_shared<dielectric>(1.5);
+
     auto material_ground = std::make_shared<lambertian>(
         color(0.8, 0.8, 0.0)
     );
@@ -72,7 +74,7 @@ int main() {
     world.add(std::make_shared<sphere>(
         point3(0, 0, -1),
         0.5,
-        material_center
+        material_glass
     ));
 
     world.add(std::make_shared<sphere>(
