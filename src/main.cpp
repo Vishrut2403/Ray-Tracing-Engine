@@ -5,6 +5,7 @@
 #include "moving_sphere.h"
 #include "material.h"
 #include "camera.h"
+#include <bvh.h>
 
 #include <iostream>
 
@@ -141,6 +142,13 @@ int main() {
               << image_height << "\n255\n";
 
     auto world = random_scene();
+    world = hittable_list(
+        make_shared<bvh_node>(
+            world.objects, 0,
+            world.objects.size(),
+            0.0, 1.0
+        )
+    );
 
     // Camera
     point3 lookfrom(13,2,3);
