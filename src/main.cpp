@@ -1,7 +1,9 @@
 #include "vec3.h"
 #include "ray.h"
 #include "sphere.h"
+#include "hittable_list.h"
 #include <iostream>
+#include <memory>
 
 color ray_color(const ray& r, const hittable& world) {
 
@@ -31,7 +33,10 @@ int main() {
               << image_width << " " << image_height << "\n255\n";
 
     // World
-    sphere world(point3(0, 0, -1), 0.5);
+    hittable_list world;
+
+    world.add(std::make_shared<sphere>(point3(0, 0, -1), 0.5));
+    world.add(std::make_shared<sphere>(point3(0, -100.5, -1), 100));
 
     // Camera
     auto viewport_height = 2.0;

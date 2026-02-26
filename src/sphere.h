@@ -29,7 +29,6 @@ public:
 
         auto sqrtd = std::sqrt(discriminant);
 
-        // Find nearest root in acceptable range
         auto root = (-half_b - sqrtd) / a;
         if (root < t_min || root > t_max) {
             root = (-half_b + sqrtd) / a;
