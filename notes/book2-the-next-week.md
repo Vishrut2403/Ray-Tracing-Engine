@@ -676,3 +676,44 @@ Intersection:
 4. Assign UV based on rectangle extents.
 
 Bounding box must have small thickness (±0.0001).
+
+---
+
+We create three rectangle types:
+
+- xy_rect (normal along +z)
+- xz_rect (normal along +y)
+- yz_rect (normal along +x)
+
+Together, they allow construction of boxes.
+
+---
+
+# 21. Translation
+
+We wrap a hittable with an offset.
+
+Instead of moving the object:
+    Move the incoming ray.
+
+hit():
+    Create shifted ray
+    Call underlying object
+    Adjust hit point back
+
+Bounding box:
+    Shift AABB by offset
+
+---
+
+# 22. Rotation (Y-axis)
+
+We rotate the incoming ray into object space.
+
+Then:
+- Perform hit test
+- Rotate hit point and normal back
+
+Bounding box:
+    Must compute rotated AABB
+    Done by testing all 8 corners

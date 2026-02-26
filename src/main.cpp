@@ -1,5 +1,5 @@
 #include "rtweekend.h"
-
+#include "xy_rect.h"
 #include "hittable_list.h"
 #include "sphere.h"
 #include "moving_sphere.h"
@@ -7,7 +7,9 @@
 #include "camera.h"
 #include "bvh.h"
 #include "image_texture.h"
-
+#include "translate.h"
+#include "rotate_y.h"
+#include "box.h"
 #include <iostream>
 
 color ray_color(const ray& r, const hittable& world, int depth) {
@@ -54,23 +56,25 @@ int main() {
 
     hittable_list world;
 
-    auto earth_texture =
-        std::make_shared<image_texture>(
-            "textures/earthmap.jpg"
-        );
-
-    auto earth_surface =
+    auto mat =
         std::make_shared<lambertian>(
-            earth_texture
-        );
+            color(0.7, 0.2, 0.2));
 
-    world.add(
-        std::make_shared<sphere>(
+    std::shared_ptr<hittable> cube =
+        std::make_shared<box>(
             point3(0,0,0),
-            2.0,
-            earth_surface
-        )
-    );
+            point3(1,1,1),
+            mat);
+
+    cube =
+        std::make_shared<rotate_y>(
+            cube, 30);
+
+    cube =
+        std::make_shared<translate>(
+            cube, vec3(-0.5,0,-0.5));
+
+    world.add(cube);
 
     // Wrap world with BVH 
     world = hittable_list(
@@ -85,7 +89,7 @@ int main() {
 
     // Camera
 
-    point3 lookfrom(0,0,12);
+    point3 lookfrom(4,3,6);
     point3 lookat(0,0,0);
     vec3 vup(0,1,0);
 
