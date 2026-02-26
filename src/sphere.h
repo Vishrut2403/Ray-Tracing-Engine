@@ -3,6 +3,18 @@
 
 #include "hittable.h"
 
+inline void get_sphere_uv(
+    const point3& p,
+    double& u,
+    double& v
+) {
+    auto theta = acos(-p.y());
+    auto phi = atan2(-p.z(), p.x()) + pi;
+
+    u = phi / (2*pi);
+    v = theta / pi;
+}
+
 class sphere : public hittable {
 public:
     point3 center;
@@ -57,8 +69,11 @@ public:
         rec.set_face_normal(r, outward_normal);
         rec.mat_ptr = mat_ptr;
 
+        get_sphere_uv(outward_normal, rec.u, rec.v);
+
         return true;
     }
+
 };
 
 #endif

@@ -5,7 +5,7 @@
 #include "moving_sphere.h"
 #include "material.h"
 #include "camera.h"
-#include <bvh.h>
+#include "bvh.h"
 
 #include <iostream>
 
