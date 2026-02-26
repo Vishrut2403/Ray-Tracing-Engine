@@ -1,13 +1,23 @@
 #include "rtweekend.h"
 
+#include <fstream>
+#include <iostream>
+#include <string>
+
 #include "hittable_list.h"
 #include "camera.h"
 #include "bvh.h"
 
+#include "xy_rect.h"
 #include "xz_rect.h"
-#include "diffuse_light.h"
+#include "yz_rect.h"
+#include "flip_face.h"
+#include "box.h"
+#include "translate.h"
+#include "rotate_y.h"
 
-#include <iostream>
+#include "material.h"
+#include "diffuse_light.h"
 
 color ray_color(const ray& r, const hittable& world, int depth) {
 
@@ -36,39 +46,82 @@ color ray_color(const ray& r, const hittable& world, int depth) {
     return color(0,0,0);
 }
 
-int main() {
+int main(int argc, char** argv) {
 
-    //Image Settings 
+    // Render Parameters 
 
-    const auto aspect_ratio = 16.0 / 9.0;
-    const int image_width = 800;
-    const int image_height =
-        static_cast<int>(image_width / aspect_ratio);
+    const double aspect_ratio = 1.0;
 
-    const int samples_per_pixel = 200;
-    const int max_depth = 50;
+    const int image_width  = 400;   // e.g. 400 (dev) or 600+ (final)
+    const int image_height = 400;
 
-    std::cout << "P3\n"
-              << image_width << " "
-              << image_height << "\n255\n";
+    const int samples_per_pixel = 100;  // e.g. 50 (dev) or 500+ (final)
+    const int max_depth         = 20;  // e.g. 20 (dev) or 50  (final)
 
-    // World 
+    // Output File
+
+    std::string filename = "cornell.ppm";
+    if (argc > 1) filename = argv[1];
+
+    std::string filepath = "../renders/book2/" + filename;
+
+    std::ofstream out(filepath);
+    if (!out) {
+        std::cerr << "Error: Could not open file "
+                  << filepath << "\n";
+        return 1;
+    }
+
+    out << "P3\n"
+        << image_width << " "
+        << image_height << "\n255\n";
+
+    // Cornell Box Scene
+
     hittable_list world;
 
-    auto light =
-        std::make_shared<diffuse_light>(
-            color(4,4,4));
+    auto red   = std::make_shared<lambertian>(color(.65, .05, .05));
+    auto white = std::make_shared<lambertian>(color(.73, .73, .73));
+    auto green = std::make_shared<lambertian>(color(.12, .45, .15));
+    auto light = std::make_shared<diffuse_light>(color(15, 15, 15));
 
-    world.add(
-        std::make_shared<xz_rect>(
-            -2, 2,   // x0, x1
-            -2, 2,   // z0, z1
-            2,       // y
-            light
-        )
-    );
+    world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
+    world.add(std::make_shared<flip_face>(
+        std::make_shared<yz_rect>(0,555,0,555,0, red)
+    ));
 
-    // Wrap world with BVH
+    world.add(std::make_shared<flip_face>(
+        std::make_shared<xz_rect>(213,343,227,332,554, light)
+    ));
+
+    world.add(std::make_shared<xz_rect>(0,555,0,555,0, white));
+    world.add(std::make_shared<flip_face>(
+        std::make_shared<xz_rect>(0,555,0,555,555, white)
+    ));
+    world.add(std::make_shared<flip_face>(
+        std::make_shared<xy_rect>(0,555,0,555,555, white)
+    ));
+
+    std::shared_ptr<hittable> box1 =
+        std::make_shared<box>(
+            point3(0,0,0),
+            point3(165,330,165),
+            white);
+
+    box1 = std::make_shared<rotate_y>(box1, 15);
+    box1 = std::make_shared<translate>(box1, vec3(265,0,295));
+    world.add(box1);
+
+    std::shared_ptr<hittable> box2 =
+        std::make_shared<box>(
+            point3(0,0,0),
+            point3(165,165,165),
+            white);
+
+    box2 = std::make_shared<rotate_y>(box2, -18);
+    box2 = std::make_shared<translate>(box2, vec3(130,0,65));
+    world.add(box2);
+
     world = hittable_list(
         std::make_shared<bvh_node>(
             world.objects,
@@ -79,48 +132,43 @@ int main() {
         )
     );
 
-    //Camera
+    // Camera
 
-    point3 lookfrom(0,4,5);
-    point3 lookat(0,2,0);
+    point3 lookfrom(278,278,-800);
+    point3 lookat(278,278,0);
     vec3 vup(0,1,0);
-
-    auto dist_to_focus = 10.0;
-    auto aperture = 0.0;
 
     camera cam(
         lookfrom,
         lookat,
         vup,
-        20,
+        40,
         aspect_ratio,
-        aperture,
-        dist_to_focus,
+        0.0,
+        10.0,
         0.0,
         1.0
     );
 
-    //Render 
+    // Render Loop
 
     for (int j = image_height - 1; j >= 0; --j) {
+
+        std::cerr << "\rScanlines remaining: "
+                  << j << " / " << image_height
+                  << std::flush;
+
         for (int i = 0; i < image_width; ++i) {
 
             color pixel_color(0,0,0);
 
             for (int s = 0; s < samples_per_pixel; ++s) {
 
-                auto u =
-                    (i + random_double())
-                    / (image_width - 1);
-
-                auto v =
-                    (j + random_double())
-                    / (image_height - 1);
+                auto u = (i + random_double()) / (image_width - 1);
+                auto v = (j + random_double()) / (image_height - 1);
 
                 ray r = cam.get_ray(u, v);
-
-                pixel_color +=
-                    ray_color(r, world, max_depth);
+                pixel_color += ray_color(r, world, max_depth);
             }
 
             auto scale = 1.0 / samples_per_pixel;
@@ -129,16 +177,22 @@ int main() {
             auto g_col = sqrt(scale * pixel_color.y());
             auto b_col = sqrt(scale * pixel_color.z());
 
-            int ir = static_cast<int>(
-                256 * clamp(r_col, 0.0, 0.999));
-            int ig = static_cast<int>(
-                256 * clamp(g_col, 0.0, 0.999));
-            int ib = static_cast<int>(
-                256 * clamp(b_col, 0.0, 0.999));
+            int ir = static_cast<int>(256 * clamp(r_col, 0.0, 0.999));
+            int ig = static_cast<int>(256 * clamp(g_col, 0.0, 0.999));
+            int ib = static_cast<int>(256 * clamp(b_col, 0.0, 0.999));
 
-            std::cout << ir << " "
-                      << ig << " "
-                      << ib << "\n";
+            out << ir << " "
+                << ig << " "
+                << ib << "\n";
         }
     }
+
+    std::cerr << "\nRender complete.\n";
+
+    out.close();
+
+    std::cout << "Saved to: "
+              << filepath << "\n";
+
+    return 0;
 }

@@ -737,3 +737,141 @@ ray_color updated to:
     return emitted + attenuation * recursive_color
 
 This enables real light sources.
+
+---
+
+# Cornell Box — Global Illumination Validation Scene
+
+## Purpose
+
+The Cornell Box is a canonical global illumination test scene used to validate:
+
+- Emissive materials
+- Diffuse scattering
+- Indirect light transport
+- Color bleeding
+- Soft shadows
+- Geometric correctness
+
+It is the first physically convincing render in the project.
+
+---
+
+## Scene Structure
+
+The Cornell Box consists of:
+
+- Red left wall
+- Green right wall
+- White floor
+- White ceiling
+- White back wall
+- Rectangular ceiling area light
+- Two interior white boxes (rotated)
+
+All dimensions are defined in a 555 × 555 × 555 unit cube.
+
+---
+
+## Light Transport Behavior
+
+Unlike previous scenes, this scene relies on:
+
+    Emitted light + recursive scattering
+
+Radiance equation implemented:
+
+    L = emitted + attenuation × recursive(L)
+
+Example light path:
+
+    Light → Red wall → Floor → Camera
+
+This produces visible red color bleeding on the floor.
+
+---
+
+## Why This Scene Matters
+
+Validates:
+
+- Correct surface normals
+- flip_face correctness
+- Area light emission
+- BVH handling of complex geometry
+- Transformations (rotate_y + translate)
+- Multiple bounce path tracing
+
+Noise is expected at low sample counts.
+Higher samples reduce variance.
+
+---
+
+## Recommended Settings
+
+Aspect Ratio: 1.0  
+Resolution: 600 × 600  
+Samples: 200–500  
+Max Depth: 50
+
+---
+
+## Expected Visual Output
+
+- Bright rectangular ceiling light
+- Soft shadows
+- Subtle red and green light bleed
+- Neutral white interior boxes
+- No sky gradient (pure black outside box)
+
+---
+
+---
+
+## Render Performance Notes
+
+The Cornell Box relies entirely on indirect illumination.
+There is no background light.
+
+This means:
+
+- Many rays terminate without hitting the light
+- Convergence is slow
+- High sample counts are required for clean output
+
+Noise at low samples is expected behavior in a pure Monte Carlo integrator.
+
+---
+
+## Development Render Configuration
+
+To allow faster iteration, render parameters were reduced:
+
+- Resolution: 400 × 400
+- Samples per pixel: 50
+- Max depth: 20
+
+This reduces total ray evaluations significantly and speeds up testing.
+
+Estimated workload comparison:
+
+High quality:
+    600 × 600 × 200 × 50 ≈ 3.6B ray evaluations
+
+Development:
+    400 × 400 × 50 × 20 ≈ 160M ray evaluations
+
+This is over 20× faster.
+
+---
+
+## Progress Tracking
+
+Added scanline progress reporting to the render loop:
+
+```cpp
+std::cerr << "\rScanlines remaining: "
+          << j << " / " << image_height
+          << std::flush;
+
+---
