@@ -5,15 +5,21 @@
 #include <iostream>
 #include <memory>
 
-color ray_color(const ray& r, const hittable& world) {
+color ray_color(const ray& r, const hittable& world, int depth) {
+
+    if (depth <= 0)
+        return color(0, 0, 0);
 
     hit_record rec;
 
-    if (world.hit(r, 0.0, 1000.0, rec)) {
-        return 0.5 * color(
-            rec.normal.x() + 1,
-            rec.normal.y() + 1,
-            rec.normal.z() + 1
+    if (world.hit(r, 0.001, 1000.0, rec)) {
+
+        vec3 target = rec.p + rec.normal + random_in_unit_sphere();
+
+        return 0.5 * ray_color(
+            ray(rec.p, target - rec.p),
+            world,
+            depth - 1
         );
     }
 
@@ -61,7 +67,7 @@ int main() {
             ray r(origin,
                   lower_left_corner + u*horizontal + v*vertical - origin);
 
-            color pixel_color = ray_color(r, world);
+            color pixel_color = ray_color(r, world, 50);
 
             int ir = static_cast<int>(255.999 * pixel_color.x());
             int ig = static_cast<int>(255.999 * pixel_color.y());

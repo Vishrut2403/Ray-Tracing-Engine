@@ -3,6 +3,7 @@
 
 #include <cmath>
 #include <iostream>
+#include <cstdlib>
 
 class vec3 {
 public:
@@ -107,4 +108,20 @@ inline vec3 unit_vector(const vec3& v) {
     return v / v.length();
 }
 
+inline double random_double() {
+    return rand() / (RAND_MAX + 1.0);
+}
+
+inline vec3 random_in_unit_sphere() {
+    while (true) {
+        vec3 p(
+            random_double()*2 - 1,
+            random_double()*2 - 1,
+            random_double()*2 - 1
+        );
+
+        if (p.length_squared() >= 1) continue;
+        return p;
+    }
+}
 #endif
