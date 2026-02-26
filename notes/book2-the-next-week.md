@@ -1,14 +1,23 @@
 # Book 2 — The Next Week
 
+This book upgrades the renderer from a correct path tracer
+to a scalable and extensible rendering system.
+
 ---
 
-# Motion Blur
+# 1. Motion Blur (Time as a Dimension)
 
-Book 2 introduces time as a dimension.
+## Concept
 
-## Core Idea
+Light transport occurs over time.
+A real camera shutter is open for a duration, not an instant.
 
-Rays now carry a time value:
+Instead of tracing rays at a fixed time,
+we sample time randomly within a shutter interval.
+
+---
+
+## Ray Upgrade
 
 ```cpp
 class ray {
@@ -19,7 +28,15 @@ public:
 };
 ```
 
-Camera generates rays with random time:
+Each ray now carries:
+
+- origin
+- direction
+- time
+
+---
+
+## Camera Upgrade
 
 ```cpp
 ray get_ray(double s, double t) const {
@@ -29,17 +46,28 @@ ray get_ray(double s, double t) const {
 }
 ```
 
-Moving objects interpolate position:
+The camera samples time uniformly between:
+
+- time0 → shutter open
+- time1 → shutter close
+
+---
+
+## Moving Objects
+
+Objects interpolate position over time:
 
 ```cpp
-center = center0 + ((time - time0)/(time1-time0)) * (center1-center0);
+center = center0
+       + ((time - time0)/(time1-time0))
+         * (center1-center0);
 ```
 
 This produces physically correct motion blur.
 
 ---
 
-# Axis-Aligned Bounding Boxes (AABB)
+# 2. Axis-Aligned Bounding Boxes (AABB)
 
 ## Problem
 
@@ -48,7 +76,11 @@ Without acceleration:
 For each ray:
     test intersection with every object
 
-Time complexity: O(N)
+Time complexity per ray: O(N)
+
+This does not scale.
+
+---
 
 ## AABB Structure
 
@@ -64,81 +96,124 @@ public:
 };
 ```
 
-Each object implements:
+Bounding boxes allow:
 
-```cpp
-virtual bool bounding_box(
-    double time0,
-    double time1,
-    aabb& output_box
-) const = 0;
-```
-
-Moving objects return a box that encloses motion over time.
+- Fast early rejection
+- Spatial partitioning
+- Hierarchical grouping
 
 ---
 
-# Bounding Volume Hierarchy (BVH)
+## Ray–Box Intersection (Slab Method)
 
-## Problem
+For each axis:
 
-Brute-force intersection is too slow.
+1. Compute intersection interval
+2. Shrink valid t range
+3. Exit early if interval collapses
 
-## Solution
+This makes box tests extremely cheap.
 
-Group objects into a tree.
+---
 
-Each node contains:
+# 3. Surrounding Boxes
+
+When combining two objects:
+
+```cpp
+aabb surrounding_box(box0, box1);
+```
+
+This creates a bounding box that encloses both children.
+
+Used to construct tree nodes.
+
+---
+
+# 4. Bounding Volume Hierarchy (BVH)
+
+## Core Idea
+
+Replace flat object list with a binary tree.
+
+Each node stores:
+
 - left child
 - right child
 - bounding box enclosing both
 
-Algorithm:
+---
 
-```
-If ray misses node box:
-    skip entire subtree
+## BVH Construction Algorithm
 
-If ray hits:
-    recurse into children
-```
-
-## BVH Construction
-
-1. Choose random axis (x/y/z)
+1. Pick random axis (x, y, or z)
 2. Sort objects along that axis
 3. Split in half
-4. Recursively build left and right nodes
+4. Recursively build subtrees
 
-```cpp
-auto axis = random_int(0,2);
-std::sort(objects.begin()+start,
-          objects.begin()+end,
-          comparator);
-```
-
-Leaf nodes:
+Leaf conditions:
 - 1 object → left = right
 - 2 objects → ordered pair
 
 Each node stores:
 
 ```cpp
-aabb box = surrounding_box(box_left, box_right);
+box = surrounding_box(box_left, box_right);
 ```
 
 ---
 
-# Performance Impact
+## BVH Traversal Logic
+
+```cpp
+if (!box.hit(ray)) return false;
+
+hit_left  = left->hit(...)
+hit_right = right->hit(...)
+```
+
+Optimization:
+
+```cpp
+hit_right = right->hit(ray,
+                       t_min,
+                       hit_left ? rec.t : t_max,
+                       rec);
+```
+
+If left child hits closer,
+right subtree search is clipped.
+
+This reduces unnecessary intersection tests.
+
+---
+
+# 5. Performance Impact
 
 Without BVH:
 - O(N) intersections per ray
 
 With BVH:
-- O(log N) average behavior
+- Expected O(log N)
 
-In large scenes:
-- 5–20x speed improvement
+Large scenes:
+- 5× to 20× speed improvement
+- Dramatic scalability increase
+
+---
+
+# 6. Architectural Upgrade
+
+After BVH, the renderer now includes:
+
+- Monte Carlo path tracing
+- Diffuse / Metal / Dielectric materials
+- Depth of field
+- Motion blur
+- AABB spatial bounds
+- BVH acceleration
+
+This is now a scalable physically based renderer.
 
 ---
 
@@ -156,20 +231,5 @@ Final:
 
     ./render > renders/book2/final.ppm
 
-Note:
 Renders are stored locally and not pushed to GitHub.
-They are deterministic and regeneratable.
-
----
-
-# Architectural State After Book 2
-
-Renderer now includes:
-
-- Physically based materials
-- Depth of field
-- Motion blur
-- AABB bounding volumes
-- BVH acceleration structure
-
-This is now a structurally scalable ray tracer.
+They are reproducible and regeneratable.
