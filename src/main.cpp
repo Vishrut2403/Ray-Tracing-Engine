@@ -2,7 +2,7 @@
 #include "ray.h"
 #include <iostream>
 
-bool hit_sphere(const point3& center, double radius, const ray& r) {
+double hit_sphere(const point3& center, double radius, const ray& r) {
     vec3 oc = r.origin() - center;
 
     auto a = dot(r.direction(), r.direction());
@@ -11,19 +11,32 @@ bool hit_sphere(const point3& center, double radius, const ray& r) {
 
     auto discriminant = b*b - 4*a*c;
 
-    return (discriminant >= 0);
+    if (discriminant < 0) {
+        return -1.0;
+    } else {
+        return (-b - std::sqrt(discriminant)) / (2.0*a);
+    }
 }
 
 color ray_color(const ray& r) {
 
-    if (hit_sphere(point3(0, 0, -1), 0.5, r)) {
-        return color(1, 0, 0); 
+    double t = hit_sphere(point3(0, 0, -1), 0.5, r);
+
+    if (t > 0.0) {
+        point3 p = r.at(t);
+        vec3 normal = unit_vector(p - point3(0, 0, -1));
+
+        return 0.5 * color(
+            normal.x() + 1,
+            normal.y() + 1,
+            normal.z() + 1
+        );
     }
 
     vec3 unit_direction = unit_vector(r.direction());
-    auto t = 0.5 * (unit_direction.y() + 1.0);
-    return (1.0 - t) * color(1.0, 1.0, 1.0)
-         + t * color(0.5, 0.7, 1.0);
+    auto tt = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - tt) * color(1.0, 1.0, 1.0)
+         + tt * color(0.5, 0.7, 1.0);
 }
 
 int main() {
@@ -35,7 +48,7 @@ int main() {
     std::cout << "P3\n"
               << image_width << " " << image_height << "\n255\n";
 
-    // Camera
+
     auto viewport_height = 2.0;
     auto viewport_width = aspect_ratio * viewport_height;
     auto focal_length = 1.0;
