@@ -7,3 +7,5 @@ build/
 render
 test
 .vscode/
+renders/
+*.ppm
