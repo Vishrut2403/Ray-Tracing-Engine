@@ -129,11 +129,11 @@ int main() {
 
     // Image settings
     const auto aspect_ratio = 16.0 / 9.0;
-    const int image_width = 400;
+    const int image_width = 300;
     const int image_height =
         static_cast<int>(image_width / aspect_ratio);
 
-    const int samples_per_pixel = 200;   // ↑ smoother blur
+    const int samples_per_pixel = 50;   // ↑ smoother blur
     const int max_depth = 50;
 
     std::cout << "P3\n"

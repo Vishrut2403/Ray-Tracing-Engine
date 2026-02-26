@@ -6,6 +6,9 @@
 #include <memory>
 #include <cstdlib>
 
+using std::shared_ptr;
+using std::make_shared;
+
 // Constants
 
 const double infinity = std::numeric_limits<double>::infinity();
@@ -33,6 +36,10 @@ inline double clamp(double x, double min, double max) {
     if (x < min) return min;
     if (x > max) return max;
     return x;
+}
+
+inline int random_int(int min, int max) {
+    return static_cast<int>(random_double(min, max+1));
 }
 
 // Common Headers

@@ -9,6 +9,20 @@ public:
     double radius;
     std::shared_ptr<material> mat_ptr;
 
+    virtual bool bounding_box(
+        double time0,
+        double time1,
+        aabb& output_box
+    ) const override {
+
+        output_box = aabb(
+            center - vec3(radius, radius, radius),
+            center + vec3(radius, radius, radius)
+        );
+
+        return true;
+    }
+
     sphere(point3 cen, double r, std::shared_ptr<material> m)
         : center(cen), radius(r), mat_ptr(m) {}
 
