@@ -1,15 +1,12 @@
 #include "rtweekend.h"
-#include "xy_rect.h"
+
 #include "hittable_list.h"
-#include "sphere.h"
-#include "moving_sphere.h"
-#include "material.h"
 #include "camera.h"
 #include "bvh.h"
-#include "image_texture.h"
-#include "translate.h"
-#include "rotate_y.h"
-#include "box.h"
+
+#include "xz_rect.h"
+#include "diffuse_light.h"
+
 #include <iostream>
 
 color ray_color(const ray& r, const hittable& world, int depth) {
@@ -20,25 +17,28 @@ color ray_color(const ray& r, const hittable& world, int depth) {
     hit_record rec;
 
     if (world.hit(r, 0.001, infinity, rec)) {
+
         ray scattered;
         color attenuation;
 
-        if (rec.mat_ptr->scatter(r, rec, attenuation, scattered))
-            return attenuation * ray_color(scattered, world, depth - 1);
+        color emitted =
+            rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
 
-        return color(0,0,0);
+        if (!rec.mat_ptr->scatter(
+                r, rec, attenuation, scattered))
+            return emitted;
+
+        return emitted +
+               attenuation *
+               ray_color(scattered, world, depth - 1);
     }
 
-    vec3 unit_direction = unit_vector(r.direction());
-    auto t = 0.5*(unit_direction.y() + 1.0);
-
-    return (1.0 - t) * color(1.0,1.0,1.0)
-         + t * color(0.5,0.7,1.0);
+    return color(0,0,0);
 }
 
 int main() {
 
-    // Image Settings
+    //Image Settings 
 
     const auto aspect_ratio = 16.0 / 9.0;
     const int image_width = 800;
@@ -53,30 +53,22 @@ int main() {
               << image_height << "\n255\n";
 
     // World 
-
     hittable_list world;
 
-    auto mat =
-        std::make_shared<lambertian>(
-            color(0.7, 0.2, 0.2));
+    auto light =
+        std::make_shared<diffuse_light>(
+            color(4,4,4));
 
-    std::shared_ptr<hittable> cube =
-        std::make_shared<box>(
-            point3(0,0,0),
-            point3(1,1,1),
-            mat);
+    world.add(
+        std::make_shared<xz_rect>(
+            -2, 2,   // x0, x1
+            -2, 2,   // z0, z1
+            2,       // y
+            light
+        )
+    );
 
-    cube =
-        std::make_shared<rotate_y>(
-            cube, 30);
-
-    cube =
-        std::make_shared<translate>(
-            cube, vec3(-0.5,0,-0.5));
-
-    world.add(cube);
-
-    // Wrap world with BVH 
+    // Wrap world with BVH
     world = hittable_list(
         std::make_shared<bvh_node>(
             world.objects,
@@ -87,10 +79,10 @@ int main() {
         )
     );
 
-    // Camera
+    //Camera
 
-    point3 lookfrom(4,3,6);
-    point3 lookat(0,0,0);
+    point3 lookfrom(0,4,5);
+    point3 lookat(0,2,0);
     vec3 vup(0,1,0);
 
     auto dist_to_focus = 10.0;
@@ -108,7 +100,7 @@ int main() {
         1.0
     );
 
-    // Render
+    //Render 
 
     for (int j = image_height - 1; j >= 0; --j) {
         for (int i = 0; i < image_width; ++i) {

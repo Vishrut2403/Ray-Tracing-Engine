@@ -717,3 +717,23 @@ Then:
 Bounding box:
     Must compute rotated AABB
     Done by testing all 8 corners
+
+---
+
+# 23. Emissive Materials
+
+We extend material interface with:
+
+    emitted(u, v, p)
+
+Default = black.
+
+diffuse_light:
+    - Does not scatter
+    - Only emits light
+
+ray_color updated to:
+
+    return emitted + attenuation * recursive_color
+
+This enables real light sources.
