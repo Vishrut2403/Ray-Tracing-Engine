@@ -1,42 +1,24 @@
 #include "vec3.h"
 #include "ray.h"
+#include "sphere.h"
 #include <iostream>
 
-double hit_sphere(const point3& center, double radius, const ray& r) {
-    vec3 oc = r.origin() - center;
+color ray_color(const ray& r, const hittable& world) {
 
-    auto a = dot(r.direction(), r.direction());
-    auto b = 2.0 * dot(oc, r.direction());
-    auto c = dot(oc, oc) - radius * radius;
+    hit_record rec;
 
-    auto discriminant = b*b - 4*a*c;
-
-    if (discriminant < 0) {
-        return -1.0;
-    } else {
-        return (-b - std::sqrt(discriminant)) / (2.0*a);
-    }
-}
-
-color ray_color(const ray& r) {
-
-    double t = hit_sphere(point3(0, 0, -1), 0.5, r);
-
-    if (t > 0.0) {
-        point3 p = r.at(t);
-        vec3 normal = unit_vector(p - point3(0, 0, -1));
-
+    if (world.hit(r, 0.0, 1000.0, rec)) {
         return 0.5 * color(
-            normal.x() + 1,
-            normal.y() + 1,
-            normal.z() + 1
+            rec.normal.x() + 1,
+            rec.normal.y() + 1,
+            rec.normal.z() + 1
         );
     }
 
     vec3 unit_direction = unit_vector(r.direction());
-    auto tt = 0.5 * (unit_direction.y() + 1.0);
-    return (1.0 - tt) * color(1.0, 1.0, 1.0)
-         + tt * color(0.5, 0.7, 1.0);
+    auto t = 0.5 * (unit_direction.y() + 1.0);
+    return (1.0 - t) * color(1.0, 1.0, 1.0)
+         + t * color(0.5, 0.7, 1.0);
 }
 
 int main() {
@@ -48,7 +30,10 @@ int main() {
     std::cout << "P3\n"
               << image_width << " " << image_height << "\n255\n";
 
+    // World
+    sphere world(point3(0, 0, -1), 0.5);
 
+    // Camera
     auto viewport_height = 2.0;
     auto viewport_width = aspect_ratio * viewport_height;
     auto focal_length = 1.0;
@@ -71,7 +56,7 @@ int main() {
             ray r(origin,
                   lower_left_corner + u*horizontal + v*vertical - origin);
 
-            color pixel_color = ray_color(r);
+            color pixel_color = ray_color(r, world);
 
             int ir = static_cast<int>(255.999 * pixel_color.x());
             int ig = static_cast<int>(255.999 * pixel_color.y());
