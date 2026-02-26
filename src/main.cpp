@@ -73,7 +73,7 @@ int main() {
 
     world.add(std::make_shared<sphere>(
         point3(0, 0, -1),
-        0.5,
+        -0.45,
         material_glass
     ));
 
