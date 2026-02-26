@@ -659,3 +659,20 @@ Pipeline:
 4. Values scaled from [0,255] → [0,1]
 
 This enables real-world materials and environment maps.
+
+---
+
+# 19. Axis-Aligned Rectangles
+
+We introduce planar primitives.
+
+Example:
+XY rectangle lies on plane z = k.
+
+Intersection:
+1. Solve ray-plane equation for t.
+2. Compute hit point.
+3. Check if within bounds.
+4. Assign UV based on rectangle extents.
+
+Bounding box must have small thickness (±0.0001).
