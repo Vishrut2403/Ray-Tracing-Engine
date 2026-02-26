@@ -644,3 +644,18 @@ Steps:
 4. Scale from 0–255 to 0–1
 
 If load fails → return cyan debug color.
+
+---
+
+# 18. Image Textures — Verified
+
+Earth texture successfully mapped onto sphere.
+
+Pipeline:
+
+1. Sphere computes (u, v)
+2. image_texture converts (u, v) → pixel coordinates
+3. Pixel sampled from stb_image buffer
+4. Values scaled from [0,255] → [0,1]
+
+This enables real-world materials and environment maps.
