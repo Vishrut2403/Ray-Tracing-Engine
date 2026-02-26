@@ -2,6 +2,7 @@
 
 #include "hittable_list.h"
 #include "sphere.h"
+#include "moving_sphere.h"
 #include "material.h"
 #include "camera.h"
 
@@ -33,8 +34,9 @@ color ray_color(const ray& r, const hittable& world, int depth) {
 hittable_list random_scene() {
     hittable_list world;
 
-    auto ground_material = std::make_shared<lambertian>(
-        color(0.5, 0.5, 0.5));
+    auto ground_material =
+        std::make_shared<lambertian>(color(0.5, 0.5, 0.5));
+
     world.add(std::make_shared<sphere>(
         point3(0,-1000,0), 1000, ground_material));
 
@@ -53,29 +55,44 @@ hittable_list random_scene() {
                 std::shared_ptr<material> sphere_material;
 
                 if (choose_mat < 0.8) {
-                    // Diffuse
+                    // Diffuse (MOVING)
                     auto albedo =
                         color::random() * color::random();
+
                     sphere_material =
                         std::make_shared<lambertian>(albedo);
-                    world.add(std::make_shared<sphere>(
-                        center, 0.2, sphere_material));
+
+                    auto center2 =
+                        center + vec3(0,
+                                      random_double(0,0.5),
+                                      0);
+
+                    world.add(std::make_shared<moving_sphere>(
+                        center,
+                        center2,
+                        0.0,
+                        1.0,
+                        0.2,
+                        sphere_material));
 
                 } else if (choose_mat < 0.95) {
-                    // Metal
+                    // Metal (STATIC)
                     auto albedo =
                         color::random(0.5,1);
                     auto fuzz =
                         random_double(0,0.5);
+
                     sphere_material =
                         std::make_shared<metal>(albedo, fuzz);
+
                     world.add(std::make_shared<sphere>(
                         center, 0.2, sphere_material));
 
                 } else {
-                    // Glass
+                    // Glass (STATIC)
                     sphere_material =
                         std::make_shared<dielectric>(1.5);
+
                     world.add(std::make_shared<sphere>(
                         center, 0.2, sphere_material));
                 }
@@ -83,17 +100,25 @@ hittable_list random_scene() {
         }
     }
 
-    auto material1 = std::make_shared<dielectric>(1.5);
+    // Three large spheres
+
+    auto material1 =
+        std::make_shared<dielectric>(1.5);
+
     world.add(std::make_shared<sphere>(
         point3(0,1,0), 1.0, material1));
 
-    auto material2 = std::make_shared<lambertian>(
-        color(0.4,0.2,0.1));
+    auto material2 =
+        std::make_shared<lambertian>(
+            color(0.4,0.2,0.1));
+
     world.add(std::make_shared<sphere>(
         point3(-4,1,0), 1.0, material2));
 
-    auto material3 = std::make_shared<metal>(
-        color(0.7,0.6,0.5), 0.0);
+    auto material3 =
+        std::make_shared<metal>(
+            color(0.7,0.6,0.5), 0.0);
+
     world.add(std::make_shared<sphere>(
         point3(4,1,0), 1.0, material3));
 
@@ -105,8 +130,10 @@ int main() {
     // Image settings
     const auto aspect_ratio = 16.0 / 9.0;
     const int image_width = 400;
-    const int image_height = static_cast<int>(image_width / aspect_ratio);
-    const int samples_per_pixel = 100;
+    const int image_height =
+        static_cast<int>(image_width / aspect_ratio);
+
+    const int samples_per_pixel = 200;   // ↑ smoother blur
     const int max_depth = 50;
 
     std::cout << "P3\n"
@@ -131,8 +158,8 @@ int main() {
         aspect_ratio,
         aperture,
         dist_to_focus,
-        0.0,
-        1.0
+        0.0,   // shutter open
+        1.0    // shutter close
     );
 
     // Render
@@ -143,12 +170,18 @@ int main() {
 
             for (int s = 0; s < samples_per_pixel; ++s) {
 
-                auto u = (i + random_double()) / (image_width - 1);
-                auto v = (j + random_double()) / (image_height - 1);
+                auto u =
+                    (i + random_double())
+                    / (image_width - 1);
+
+                auto v =
+                    (j + random_double())
+                    / (image_height - 1);
 
                 ray r = cam.get_ray(u, v);
 
-                pixel_color += ray_color(r, world, max_depth);
+                pixel_color +=
+                    ray_color(r, world, max_depth);
             }
 
             auto scale = 1.0 / samples_per_pixel;
@@ -157,9 +190,12 @@ int main() {
             auto g_col = sqrt(scale * pixel_color.y());
             auto b_col = sqrt(scale * pixel_color.z());
 
-            int ir = static_cast<int>(256 * clamp(r_col, 0.0, 0.999));
-            int ig = static_cast<int>(256 * clamp(g_col, 0.0, 0.999));
-            int ib = static_cast<int>(256 * clamp(b_col, 0.0, 0.999));
+            int ir = static_cast<int>(
+                256 * clamp(r_col, 0.0, 0.999));
+            int ig = static_cast<int>(
+                256 * clamp(g_col, 0.0, 0.999));
+            int ib = static_cast<int>(
+                256 * clamp(b_col, 0.0, 0.999));
 
             std::cout << ir << " "
                       << ig << " "
