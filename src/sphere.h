@@ -7,9 +7,10 @@ class sphere : public hittable {
 public:
     point3 center;
     double radius;
+    std::shared_ptr<material> mat_ptr;
 
-    sphere(point3 cen, double r)
-        : center(cen), radius(r) {}
+    sphere(point3 cen, double r, std::shared_ptr<material> m)
+        : center(cen), radius(r), mat_ptr(m) {}
 
     virtual bool hit(
         const ray& r,
@@ -39,6 +40,7 @@ public:
         rec.t = root;
         rec.p = r.at(rec.t);
         rec.normal = (rec.p - center) / radius;
+        rec.mat_ptr = mat_ptr;
 
         return true;
     }
