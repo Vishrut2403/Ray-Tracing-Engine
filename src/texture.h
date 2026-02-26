@@ -82,7 +82,7 @@ public:
 
         return color(1,1,1) *
                0.5 *
-               (1 + noise.noise(scale * p));
+               (1 + sin(scale * p.z() + 10 * noise.turb(p)));
     }
 
 private:

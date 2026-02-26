@@ -579,3 +579,16 @@ Each octave:
 This produces fractal detail.
 
 Used to simulate marble, wood, clouds.
+
+---
+
+# 17. Marble Texture
+
+Marble effect:
+
+    0.5 * (1 + sin(scale * z + 10 * turb(p)))
+
+The sine wave creates stripes.
+Turbulence distorts stripes into veins.
+
+This produces realistic marble-like appearance.
