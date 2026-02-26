@@ -33,7 +33,7 @@ color ray_color(const ray& r, const hittable& world, int depth) {
 }
 
 int main() {
-
+    
     auto material_ground = std::make_shared<lambertian>(
         color(0.8, 0.8, 0.0)
     );
@@ -45,6 +45,7 @@ int main() {
     const auto aspect_ratio = 16.0 / 9.0;
     const int image_width = 400;
     const int image_height = static_cast<int>(image_width / aspect_ratio);
+    const int samples_per_pixel = 100;
 
     std::cout << "P3\n"
               << image_width << " " << image_height << "\n255\n";
@@ -89,9 +90,26 @@ int main() {
 
             color pixel_color = ray_color(r, world, 50);
 
-            int ir = static_cast<int>(255.999 * pixel_color.x());
-            int ig = static_cast<int>(255.999 * pixel_color.y());
-            int ib = static_cast<int>(255.999 * pixel_color.z());
+            for (int s = 0; s < samples_per_pixel; ++s) {
+
+                auto u = (i + random_double()) / (image_width - 1);
+                auto v = (j + random_double()) / (image_height - 1);
+
+                ray r(origin,
+                    lower_left_corner + u*horizontal + v*vertical - origin);
+
+                pixel_color += ray_color(r, world, 50);
+            }
+
+            auto scale = 1.0 / samples_per_pixel;
+
+            auto r_col = sqrt(scale * pixel_color.x());
+            auto g_col = sqrt(scale * pixel_color.y());
+            auto b_col = sqrt(scale * pixel_color.z());
+
+            int ir = static_cast<int>(256 * clamp(r_col, 0.0, 0.999));
+            int ig = static_cast<int>(256 * clamp(g_col, 0.0, 0.999));
+            int ib = static_cast<int>(256 * clamp(b_col, 0.0, 0.999));
 
             std::cout << ir << " "
                       << ig << " "
