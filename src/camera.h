@@ -5,6 +5,7 @@
 
 class camera {
 public:
+double time0, time1;
     camera(
         point3 lookfrom,
         point3 lookat,
@@ -12,8 +13,13 @@ public:
         double vfov,
         double aspect_ratio,
         double aperture,
-        double focus_dist
+        double focus_dist,
+        double _time0 =0,
+        double _time1 =0
     ) {
+        time0 = _time0;
+        time1 = _time1;
+
         auto theta = degrees_to_radians(vfov);
         auto h = tan(theta/2);
         auto viewport_height = 2.0 * h;
@@ -45,7 +51,8 @@ public:
             + s*horizontal
             + t*vertical
             - origin
-            - offset
+            - offset,
+            random_double(time0,time1)
         );
     }
 
