@@ -1024,3 +1024,111 @@ Supports:
 Integrated seamlessly into MIS path tracer.
 
 Cornell Box smoke test renders successfully.
+
+## 28 Multithreading Implementation (OpenMP)
+
+Objective
+
+Parallelize the Monte Carlo rendering loop to utilize all CPU cores and significantly reduce render time without changing the integrator architecture.
+
+### Baseline (Single Thread)
+
+Original render loop:
+
+```
+for (int j = image_height - 1; j >= 0; --j)
+    for (int i = 0; i < image_width; ++i)
+        for (int s = 0; s < samples_per_pixel; ++s)
+            pixel_color += ray_color(...);
+```
+
+Characteristics:
+
+- Fully serial
+
+- CPU utilization ~100%
+
+Cornell volumetric render:
+
+- 200×200
+
+- 500 spp
+
+- max_depth = 20
+
+- Time: 284 seconds
+
+### Parallelization Strategy
+
+Decision: Parallelize Scanlines
+
+We parallelize the outer loop:
+
+```
+#pragma omp parallel for schedule(dynamic)
+for (int j = 0; j < image_height; ++j)
+```
+
+Why scanlines?
+
+- Independent work units
+
+- Good load balancing
+
+- Minimal synchronization
+
+- Avoids contention inside pixel sampling
+
+Why schedule(dynamic)?
+
+- Different scanlines have:
+
+- Different BVH traversal costs
+
+- Different volume scattering depth
+
+- Different light sampling complexity
+
+Dynamic scheduling:
+
+- Assigns work to idle threads
+
+- Prevents cores from stalling
+
+- Improves utilization
+
+### Performance Results
+
+Test Scene:
+
+- Cornell Box
+
+- Volumetric media
+
+- BVH
+
+- MIS
+
+- 200×200
+
+- 500 spp
+
+- max_depth = 20
+
+Single Thread
+
+```
+OMP_NUM_THREADS=1
+Time: 284 seconds
+```
+
+16 Threads
+
+```
+Time: 27 seconds
+```
+
+### Conclusion
+
+Speedup : 
+    284/27 ≈ 10.5×

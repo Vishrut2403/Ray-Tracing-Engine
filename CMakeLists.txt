@@ -8,6 +8,8 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Collect all .cpp files
 file(GLOB_RECURSE SRC_FILES src/*.cpp)
 
+
+
 add_executable(render ${SRC_FILES})
 
 # Add all header directories
@@ -21,3 +23,6 @@ target_include_directories(render PRIVATE
     src/external
     src/pdfs
 )
+
+find_package(OpenMP REQUIRED)
+target_link_libraries(render PRIVATE OpenMP::OpenMP_CXX)

@@ -3,6 +3,8 @@
 #include <fstream>
 #include <iostream>
 #include <string>
+#include <omp.h>
+#include <atomic>
 
 #include "hittable_list.h"
 #include "hittable_pdf.h"
@@ -96,10 +98,22 @@ color ray_color(
 
 int main(int argc, char** argv) {
 
+    std::cout << "Max Threads:"
+              << omp_get_max_threads()
+              << "\n";
+              
+    #pragma omp parallel
+    {
+        #pragma omp single
+        std::cout << "Threads in parallel region: "
+                  << omp_get_num_threads()
+                  << "\n";
+    }
+
     const double aspect_ratio = 1.0;
-    const int image_width  = 200;
-    const int image_height = 200;
-    const int samples_per_pixel = 500;
+    const int image_width  = 800;
+    const int image_height = 800;
+    const int samples_per_pixel = 800;
     const int max_depth = 20;
 
     std::string filename = "cornell.ppm";
@@ -116,7 +130,7 @@ int main(int argc, char** argv) {
 
     fs::path build_dir = fs::current_path();
     fs::path project_root = build_dir.parent_path();
-    fs::path render_dir = project_root / "renders" / "book2";
+    fs::path render_dir = project_root/ "Ray-Tracing-Engine" / "renders" / "book2";
     fs::create_directories(render_dir);
     fs::path filepath = render_dir / filename;
 
@@ -221,11 +235,13 @@ int main(int argc, char** argv) {
 
     color background(0,0,0);
 
-    for (int j = image_height - 1; j >= 0; --j) {
+    std::vector<color> framebuffer(image_width * image_height);
 
-        std::cerr << "\rScanlines remaining: "
-                  << j << " / " << image_height
-                  << std::flush;
+    std::atomic<int> rows_done = 0;
+
+
+    #pragma omp parallel for schedule(dynamic)
+    for (int j = 0; j < image_height; ++j) {
 
         for (int i = 0; i < image_width; ++i) {
 
@@ -247,6 +263,27 @@ int main(int argc, char** argv) {
                 );
             }
 
+            framebuffer[j * image_width + i] = pixel_color;
+        }
+
+        int done = ++rows_done;
+
+        #pragma omp critical
+        {
+            std::cerr << "\rScanlines completed: "
+                  << done << " / " << image_height
+                  << std::flush;
+        }
+    }
+
+    std::cerr << "\nRendering finished.\n";
+
+    for (int j = image_height - 1; j >= 0; --j) {
+        for (int i = 0; i < image_width; ++i) {
+
+            color pixel_color =
+                framebuffer[j * image_width + i];
+
             auto scale = 1.0 / samples_per_pixel;
 
             auto r_col = sqrt(scale * pixel_color.x());
@@ -262,6 +299,8 @@ int main(int argc, char** argv) {
                 << ib << "\n";
         }
     }
+            
+        
 
     std::cerr << "\nRender complete.\n";
     out.close();
