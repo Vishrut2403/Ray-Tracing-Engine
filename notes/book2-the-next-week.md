@@ -45,6 +45,7 @@ private:
     vec3 dir;
     double tm;
 };
+```
 
 Each ray now carries:
 
@@ -885,7 +886,7 @@ Added scanline progress reporting to the render loop:
 
 ---
 
-## Orthonormal Basis (ONB)
+## 24 Orthonormal Basis (ONB)
 
 To sample directions relative to a surface normal, we need a local coordinate frame.
 
@@ -903,7 +904,7 @@ This allows us to:
 
 ---
 
-## Cosine-Weighted Sampling
+## 25 Cosine-Weighted Sampling
 
 Lambertian BRDF includes a cosine term:
 
@@ -947,7 +948,7 @@ Switch to Monte Carlo integration using probability density functions.
 
 ---
 
-## Rendering Equation 
+## 26 Rendering Equation 
 
 The outgoing radiance is:
 
@@ -1003,3 +1004,23 @@ To:
     emitted + scattering_pdf * recursive_bounce / pdf_value
 
 ---
+
+## 27 Volumetric Rendering (constant medium)
+
+Implemented:
+1. `constant medium` hittable
+2. `isotropic` phase function
+3. `sphere_pdf` for unifor scattering
+
+Free-flight sampling:
+
+    t = - (1 / ρ) * ln(ξ)
+
+Supports:
+- Smoke
+- Fog
+- Participating media
+
+Integrated seamlessly into MIS path tracer.
+
+Cornell Box smoke test renders successfully.

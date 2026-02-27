@@ -10,6 +10,8 @@
 #include "camera.h"
 #include "bvh.h"
 #include "core/interval.h"
+#include "constant_medium.h"
+
 
 #include "xy_rect.h"
 #include "xz_rect.h"
@@ -94,18 +96,12 @@ color ray_color(
 
 int main(int argc, char** argv) {
 
-    // -------------------------------------------------
-    // Render Parameters
-    // -------------------------------------------------
     const double aspect_ratio = 1.0;
-    const int image_width  = 400;
-    const int image_height = 400;
-    const int samples_per_pixel = 200;
+    const int image_width  = 200;
+    const int image_height = 200;
+    const int samples_per_pixel = 500;
     const int max_depth = 20;
 
-    // -------------------------------------------------
-    // Output Setup
-    // -------------------------------------------------
     std::string filename = "cornell.ppm";
 
     if (argc > 1) {
@@ -135,9 +131,7 @@ int main(int argc, char** argv) {
         << image_width << " "
         << image_height << "\n255\n";
 
-    // -------------------------------------------------
-    // Scene Construction (Cornell Box)
-    // -------------------------------------------------
+
 
     hittable_list world;
     hittable_list lights;
@@ -147,12 +141,10 @@ int main(int argc, char** argv) {
     auto green = std::make_shared<lambertian>(color(.12, .45, .15));
     auto light = std::make_shared<diffuse_light>(color(15, 15, 15));
 
-    // Walls
     world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
     world.add(std::make_shared<flip_face>(
         std::make_shared<yz_rect>(0,555,0,555,0, red)));
 
-    // Ceiling light (ADD TO BOTH world AND lights)
     auto ceiling_light =
         std::make_shared<xz_rect>(213,343,227,332,554, light);
 
@@ -165,7 +157,6 @@ int main(int argc, char** argv) {
     world.add(std::make_shared<flip_face>(
         std::make_shared<xy_rect>(0,555,0,555,555, white)));
 
-    // Boxes
     std::shared_ptr<hittable> box1 =
         std::make_shared<box>(
             point3(0,0,0),
@@ -174,7 +165,16 @@ int main(int argc, char** argv) {
 
     box1 = std::make_shared<rotate_y>(box1, 15);
     box1 = std::make_shared<translate>(box1, vec3(265,0,295));
+
+    // Add boundary geometry
     world.add(box1);
+
+    // Wrap boundary with constant medium
+    world.add(std::make_shared<constant_medium>(
+        box1,
+        0.01,                 // density
+        color(0,0,0)          // black smoke
+    ));
 
     std::shared_ptr<hittable> box2 =
         std::make_shared<box>(
@@ -184,11 +184,11 @@ int main(int argc, char** argv) {
 
     box2 = std::make_shared<rotate_y>(box2, -18);
     box2 = std::make_shared<translate>(box2, vec3(130,0,65));
-    world.add(box2);
-
-    // -------------------------------------------------
-    // BVH Acceleration
-    // -------------------------------------------------
+    world.add(std::make_shared<constant_medium>(
+        box2,
+        0.01,
+        color(1,1,1)          // white fog
+    ));
 
     world = hittable_list(
         std::make_shared<bvh_node>(
@@ -202,10 +202,6 @@ int main(int argc, char** argv) {
 
     auto lights_ptr =
         std::make_shared<hittable_list>(lights);
-
-    // -------------------------------------------------
-    // Camera
-    // -------------------------------------------------
 
     point3 lookfrom(278,278,-800);
     point3 lookat(278,278,0);
@@ -224,10 +220,6 @@ int main(int argc, char** argv) {
     );
 
     color background(0,0,0);
-
-    // -------------------------------------------------
-    // Render Loop
-    // -------------------------------------------------
 
     for (int j = image_height - 1; j >= 0; --j) {
 
