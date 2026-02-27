@@ -12,11 +12,9 @@ public:
         : emit(make_shared<solid_color>(c)) {}
 
     virtual bool scatter(
-        const ray&,
-        const hit_record&,
-        color&,
-        ray&,
-        double&
+        const ray& r_in,
+        const hit_record& rec,
+        scatter_record& srec
     ) const override {
         return false;
     }

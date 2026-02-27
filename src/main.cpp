@@ -1,4 +1,5 @@
 #include "rtweekend.h"
+#include <filesystem>
 
 #include <fstream>
 #include <iostream>
@@ -96,22 +97,53 @@ int main(int argc, char** argv) {
     const double aspect_ratio = 1.0;
     const int image_width  = 400;
     const int image_height = 400;
-    const int samples_per_pixel = 100;
+    const int samples_per_pixel = 10;
     const int max_depth = 20;
 
     // Output file
+    // ============================================================
+    // Output File Setup (CLI + Robust Path Handling)
+    // ============================================================
+
     std::string filename = "cornell.ppm";
-    if (argc > 1) filename = argv[1];
 
-    std::string filepath = "../renders/book2/" + filename;
+    // CLI filename override
+    if (argc > 1) {
+        filename = argv[1];
 
+        // Auto-append .ppm if missing
+        if (filename.size() < 4 ||
+            filename.substr(filename.size() - 4) != ".ppm") {
+            filename += ".ppm";
+        }
+    }
+
+    namespace fs = std::filesystem;
+
+    // We are executing from the build directory
+    fs::path build_dir = fs::current_path();
+
+    // Project root is one level above build/
+    fs::path project_root = build_dir.parent_path();
+
+    // Target directory: renders/book2
+    fs::path render_dir = project_root / "renders" / "book2";
+
+    // Create directory if it doesn't exist
+    fs::create_directories(render_dir);
+
+    // Final output path
+    fs::path filepath = render_dir / filename;
+
+    // Open file
     std::ofstream out(filepath);
     if (!out) {
-        std::cerr << "Error: Could not open file "
-                  << filepath << "\n";
+        std::cerr << "Error: Could not open file: "
+                << filepath << "\n";
         return 1;
     }
 
+    // Write PPM header
     out << "P3\n"
         << image_width << " "
         << image_height << "\n255\n";
@@ -237,7 +269,7 @@ int main(int argc, char** argv) {
     out.close();
 
     std::cout << "Saved to: "
-              << filepath << "\n";
+            << filepath.string() << "\n";
 
     return 0;
 }

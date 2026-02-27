@@ -3,6 +3,7 @@
 
 #include "pdf.h"
 #include "onb.h"
+#include "random.h"
 
 class cosine_pdf : public pdf {
 public:
@@ -11,6 +12,7 @@ public:
     }
 
     virtual double value(const vec3& direction) const override {
+        constexpr double local_pi = 3.1415926535897932385;
         auto cosine = dot(unit_vector(direction), uvw.w());
         return (cosine <= 0) ? 0 : cosine / pi;
     }
