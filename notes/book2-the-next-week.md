@@ -986,3 +986,17 @@ Move from:
 To:
 
     emitted + scattering_pdf * recursive_bounce / pdf_value
+
+---
+
+# Ray Tracer – Book 2 Implementation
+
+## Features
+- BVH acceleration structure
+- Interval-based ray bounds
+- PDF-based scattering
+- Diffuse light emission
+- Cornell Box scene
+- Geometric transforms (translate, rotate_y)
+
+## Build

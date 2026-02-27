@@ -12,19 +12,24 @@ public:
         : emit(make_shared<solid_color>(c)) {}
 
     virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        color& attenuation,
-        ray& scattered
+        const ray&,
+        const hit_record&,
+        color&,
+        ray&,
+        double&
     ) const override {
-        return false; // no scattering
+        return false;
     }
 
     virtual color emitted(
+        const ray& r_in,
+        const hit_record& rec,
         double u,
         double v,
         const point3& p
     ) const override {
+        if (!rec.front_face)
+            return color(0,0,0);
         return emit->value(u, v, p);
     }
 

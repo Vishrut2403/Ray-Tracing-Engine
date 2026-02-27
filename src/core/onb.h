@@ -5,6 +5,8 @@
 
 class onb {
 public:
+    vec3 axis[3];
+
     onb() {}
 
     vec3 operator[](int i) const { return axis[i]; }
@@ -27,9 +29,6 @@ public:
         axis[1] = unit_vector(cross(w(), a));
         axis[0] = cross(w(), v());
     }
-
-public:
-    vec3 axis[3];
 };
 
 #endif

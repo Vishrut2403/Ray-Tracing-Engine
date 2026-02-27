@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include "hittable.h"
 
 class flip_face : public hittable {
@@ -9,12 +10,11 @@ public:
 
     virtual bool hit(
         const ray& r,
-        double t_min,
-        double t_max,
+        const interval& ray_t,
         hit_record& rec
     ) const override {
 
-        if (!ptr->hit(r, t_min, t_max, rec))
+        if (!ptr->hit(r, ray_t, rec))
             return false;
 
         rec.front_face = !rec.front_face;

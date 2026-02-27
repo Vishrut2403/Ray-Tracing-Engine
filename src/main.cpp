@@ -7,6 +7,7 @@
 #include "hittable_list.h"
 #include "camera.h"
 #include "bvh.h"
+#include "core/interval.h"
 
 #include "xy_rect.h"
 #include "xz_rect.h"
@@ -19,31 +20,67 @@
 #include "material.h"
 #include "diffuse_light.h"
 
-color ray_color(const ray& r, const hittable& world, int depth) {
+color ray_color(
+    const ray& r,
+    const color& background,
+    const hittable& world,
+    int depth
+) {
+    hit_record rec;
 
+    // Recursion limit
     if (depth <= 0)
         return color(0,0,0);
 
-    hit_record rec;
+    // Miss → environment
+    if (!world.hit(r, interval(0.001, infinity), rec))
+        return background;
 
-    if (world.hit(r, 0.001, infinity, rec)) {
+    ray scattered;
+    color attenuation;
+    double pdf;
 
-        ray scattered;
-        color attenuation;
+    color emitted =
+        rec.mat_ptr->emitted(
+            r,
+            rec,
+            rec.u,
+            rec.v,
+            rec.p
+        );
 
-        color emitted =
-            rec.mat_ptr->emitted(rec.u, rec.v, rec.p);
+    // No scattering → pure emission
+    if (!rec.mat_ptr->scatter(
+            r, rec, attenuation, scattered, pdf))
+        return emitted;
 
-        if (!rec.mat_ptr->scatter(
-                r, rec, attenuation, scattered))
-            return emitted;
+    double scattering_pdf =
+        rec.mat_ptr->scattering_pdf(
+            r, rec, scattered
+        );
 
+    // Specular (metal / dielectric)
+    if (scattering_pdf == 0) {
         return emitted +
                attenuation *
-               ray_color(scattered, world, depth - 1);
+               ray_color(
+                   scattered,
+                   background,
+                   world,
+                   depth - 1
+               );
     }
 
-    return color(0,0,0);
+    // Diffuse (Lambertian)
+    return emitted +
+           attenuation *
+           scattering_pdf *
+           ray_color(
+               scattered,
+               background,
+               world,
+               depth - 1
+           ) / pdf;
 }
 
 int main(int argc, char** argv) {
@@ -150,6 +187,8 @@ int main(int argc, char** argv) {
         1.0
     );
 
+    color background(0,0,0);
+
     // Render Loop
 
     for (int j = image_height - 1; j >= 0; --j) {
@@ -168,7 +207,7 @@ int main(int argc, char** argv) {
                 auto v = (j + random_double()) / (image_height - 1);
 
                 ray r = cam.get_ray(u, v);
-                pixel_color += ray_color(r, world, max_depth);
+                pixel_color += ray_color(r, background, world, max_depth);
             }
 
             auto scale = 1.0 / samples_per_pixel;

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <iostream>
 #include <cstdlib>
+#include "random.h"
 
 class vec3 {
 public:
@@ -121,15 +122,15 @@ inline vec3 unit_vector(const vec3& v) {
 
 inline vec3 random_in_unit_sphere() {
     while (true) {
-        vec3 p(
-            random_double()*2 - 1,
-            random_double()*2 - 1,
-            random_double()*2 - 1
-        );
-
+        auto p = vec3::random(-1,1);
         if (p.length_squared() >= 1) continue;
         return p;
     }
+}
+
+
+inline vec3 random_unit_vector() {
+    return unit_vector(random_in_unit_sphere());
 }
 
 inline vec3 reflect(const vec3& v, const vec3& n) {

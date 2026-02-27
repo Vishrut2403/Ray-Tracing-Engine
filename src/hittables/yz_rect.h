@@ -1,5 +1,6 @@
 #pragma once
 
+#include <memory>
 #include "hittable.h"
 #include "aabb.h"
 
@@ -11,7 +12,7 @@ public:
         double _y0, double _y1,
         double _z0, double _z1,
         double _k,
-        shared_ptr<material> mat
+        std::shared_ptr<material> mat
     )
         : y0(_y0), y1(_y1),
           z0(_z0), z1(_z1),
@@ -20,15 +21,14 @@ public:
 
     virtual bool hit(
         const ray& r,
-        double t0,
-        double t1,
+        const interval& ray_t,
         hit_record& rec
     ) const override {
 
         auto t = (k - r.origin().x())
                  / r.direction().x();
 
-        if (t < t0 || t > t1)
+        if (!ray_t.surrounds(t))
             return false;
 
         auto y = r.origin().y()
@@ -47,7 +47,7 @@ public:
         rec.t = t;
         rec.p = r.at(t);
 
-        auto outward_normal = vec3(1,0,0);
+        vec3 outward_normal(1, 0, 0);
         rec.set_face_normal(r, outward_normal);
 
         rec.mat_ptr = mp;
@@ -61,7 +61,7 @@ public:
         aabb& output_box
     ) const override {
 
-        // Add small thickness in x direction
+        // Small padding in X for non-zero thickness
         output_box = aabb(
             point3(k - 0.0001, y0, z0),
             point3(k + 0.0001, y1, z1)
@@ -71,7 +71,7 @@ public:
     }
 
 private:
-    shared_ptr<material> mp;
+    std::shared_ptr<material> mp;
     double y0, y1;
     double z0, z1;
     double k;

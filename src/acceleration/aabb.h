@@ -2,56 +2,79 @@
 #define AABB_H
 
 #include "rtweekend.h"
+#include "interval.h"
 
 class aabb {
 public:
+    interval x, y, z;
+
     aabb() {}
 
-    aabb(const point3& a, const point3& b)
-        : minimum(a), maximum(b) {}
+    aabb(const interval& ix,
+         const interval& iy,
+         const interval& iz)
+        : x(ix), y(iy), z(iz) {}
 
-    point3 min() const { return minimum; }
-    point3 max() const { return maximum; }
+    aabb(const point3& a,
+         const point3& b)
+        : x(interval(fmin(a.x(), b.x()),
+                     fmax(a.x(), b.x()))),
+          y(interval(fmin(a.y(), b.y()),
+                     fmax(a.y(), b.y()))),
+          z(interval(fmin(a.z(), b.z()),
+                     fmax(a.z(), b.z()))) {}
 
-    bool hit(const ray& r, double t_min, double t_max) const {
+    const interval& axis_interval(int n) const {
+        if (n == 0) return x;
+        if (n == 1) return y;
+        return z;
+    }
+
+    bool hit(const ray& r,
+             interval ray_t) const {
+
         for (int axis = 0; axis < 3; axis++) {
 
+            const interval& ax = axis_interval(axis);
+
             auto invD = 1.0 / r.direction()[axis];
-            auto t0 = (minimum[axis] - r.origin()[axis]) * invD;
-            auto t1 = (maximum[axis] - r.origin()[axis]) * invD;
+
+            auto t0 = (ax.min - r.origin()[axis]) * invD;
+            auto t1 = (ax.max - r.origin()[axis]) * invD;
 
             if (invD < 0.0)
                 std::swap(t0, t1);
 
-            t_min = t0 > t_min ? t0 : t_min;
-            t_max = t1 < t_max ? t1 : t_max;
+            if (t0 > ray_t.min) ray_t.min = t0;
+            if (t1 < ray_t.max) ray_t.max = t1;
 
-            if (t_max <= t_min)
+            if (ray_t.max <= ray_t.min)
                 return false;
         }
+
         return true;
     }
-
-public:
-    point3 minimum;
-    point3 maximum;
 };
 
-inline aabb surrounding_box(aabb box0, aabb box1) {
+inline aabb surrounding_box(const aabb& box0,
+                            const aabb& box1) {
 
-    point3 small(
-        fmin(box0.min().x(), box1.min().x()),
-        fmin(box0.min().y(), box1.min().y()),
-        fmin(box0.min().z(), box1.min().z())
+    interval x(
+        fmin(box0.x.min, box1.x.min),
+        fmax(box0.x.max, box1.x.max)
     );
 
-    point3 big(
-        fmax(box0.max().x(), box1.max().x()),
-        fmax(box0.max().y(), box1.max().y()),
-        fmax(box0.max().z(), box1.max().z())
+    interval y(
+        fmin(box0.y.min, box1.y.min),
+        fmax(box0.y.max, box1.y.max)
     );
 
-    return aabb(small, big);
+    interval z(
+        fmin(box0.z.min, box1.z.min),
+        fmax(box0.z.max, box1.z.max)
+    );
+
+    return aabb(x, y, z);   
 }
 
 #endif
