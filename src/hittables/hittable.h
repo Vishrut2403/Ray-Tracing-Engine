@@ -22,6 +22,8 @@ struct hit_record {
                  ? outward_normal
                  : -outward_normal;
     }
+
+    
 };
 
 class hittable {
@@ -37,6 +39,16 @@ public:
         double time1,
         aabb& output_box
     ) const = 0;
+
+    virtual double pdf_value(const point3&, const vec3&) const {
+        return 0.0;
+    }
+
+    virtual vec3 random(const point3&) const {
+        return vec3(1,0,0);
+    }
 };
+
+
 
 #endif

@@ -1,19 +1,29 @@
-# Book 2 — The Next Week
+# Ray Tracing — Book 2  
+## From Basic Path Tracer to Scalable Physically-Based Renderer
 
-This book upgrades the renderer from a correct path tracer
-to a scalable and extensible rendering system.
+This stage upgrades the renderer from a simple recursive path tracer into a **scalable Monte Carlo rendering system** with:
+
+- Motion blur
+- Acceleration structures (AABB + BVH)
+- Procedural and image textures
+- Emissive materials
+- Importance sampling
+- Multiple Importance Sampling (MIS)
 
 ---
 
-# 1. Motion Blur (Time as a Dimension)
+# 1. Motion Blur — Time as a Dimension
 
 ## Concept
 
-Light transport occurs over time.
-A real camera shutter is open for a duration, not an instant.
+Real cameras integrate light over a shutter interval.
 
-Instead of tracing rays at a fixed time,
-we sample time randomly within a shutter interval.
+Instead of tracing rays at a single instant, we sample time uniformly within:
+
+- `time0` — shutter open  
+- `time1` — shutter close  
+
+This produces physically correct motion blur.
 
 ---
 
@@ -25,8 +35,16 @@ public:
     ray(const point3& origin,
         const vec3& direction,
         double time = 0.0);
+
+    point3 origin() const;
+    vec3 direction() const;
+    double time() const;
+
+private:
+    point3 orig;
+    vec3 dir;
+    double tm;
 };
-```
 
 Each ray now carries:
 
@@ -78,7 +96,7 @@ For each ray:
 
 Time complexity per ray: O(N)
 
-This does not scale.
+Not scalable for large scenes.
 
 ---
 
@@ -87,18 +105,23 @@ This does not scale.
 ```cpp
 class aabb {
 public:
+    aabb() {}
+    aabb(const point3& a, const point3& b);
+
+    point3 min() const;
+    point3 max() const;
+
+    bool hit(const ray& r, double t_min, double t_max) const;
+
+private:
     point3 minimum;
     point3 maximum;
-
-    bool hit(const ray& r,
-             double t_min,
-             double t_max) const;
 };
 ```
 
-Bounding boxes allow:
+Axis Alligned Bounding boxes allow:
 
-- Fast early rejection
+- Early rejection
 - Spatial partitioning
 - Hierarchical grouping
 
@@ -112,7 +135,7 @@ For each axis:
 2. Shrink valid t range
 3. Exit early if interval collapses
 
-This makes box tests extremely cheap.
+Box intersection is extremely cheap compared to primitive intersection.
 
 ---
 
@@ -121,12 +144,12 @@ This makes box tests extremely cheap.
 When combining two objects:
 
 ```cpp
-aabb surrounding_box(box0, box1);
+aabb surrounding_box(aabb box0, aabb box1);
 ```
 
-This creates a bounding box that encloses both children.
+Produces a minimal bounding box enclosing both.
 
-Used to construct tree nodes.
+Used during BVH construction.
 
 ---
 
@@ -149,7 +172,7 @@ Each node stores:
 1. Pick random axis (x, y, or z)
 2. Sort objects along that axis
 3. Split in half
-4. Recursively build subtrees
+4. Recursively build
 
 Leaf conditions:
 - 1 object → left = right
@@ -163,22 +186,18 @@ box = surrounding_box(box_left, box_right);
 
 ---
 
-## BVH Traversal Logic
+## BVH Traversal Optimization
 
 ```cpp
-if (!box.hit(ray)) return false;
+if (!box.hit(ray, t_min, t_max))
+    return false;
 
-hit_left  = left->hit(...)
-hit_right = right->hit(...)
-```
+bool hit_left = left->hit(ray, t_min, t_max, rec);
 
-Optimization:
-
-```cpp
-hit_right = right->hit(ray,
-                       t_min,
-                       hit_left ? rec.t : t_max,
-                       rec);
+bool hit_right = right->hit(ray,
+                            t_min,
+                            hit_left ? rec.t : t_max,
+                            rec);
 ```
 
 If left child hits closer,
@@ -221,18 +240,16 @@ This is now a scalable physically based renderer.
 
 Compile:
 
-    g++ -O3 -std=c++17 src/main.cpp -o render
+    cmake ..
+    make
 
 Preview:
 
-    ./render > renders/book2/preview.ppm
+    ./render preview.ppm
 
 Final:
 
-    ./render > renders/book2/final.ppm
-
-Renders are stored locally and not pushed to GitHub.
-They are reproducible and regeneratable.
+    ./render final.ppm
 
 ---
 
@@ -304,8 +321,6 @@ checker_texture stores:
 
 - even texture
 - odd texture
-
-This demonstrates composability of texture systems.
 
 ---
 
@@ -988,15 +1003,3 @@ To:
     emitted + scattering_pdf * recursive_bounce / pdf_value
 
 ---
-
-# Ray Tracer – Book 2 Implementation
-
-## Features
-- BVH acceleration structure
-- Interval-based ray bounds
-- PDF-based scattering
-- Diffuse light emission
-- Cornell Box scene
-- Geometric transforms (translate, rotate_y)
-
-## Build

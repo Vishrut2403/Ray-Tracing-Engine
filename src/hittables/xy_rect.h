@@ -2,6 +2,8 @@
 
 #include <memory>
 #include "hittable.h"
+#include "aabb.h"
+#include "rtweekend.h"
 
 class xy_rect : public hittable {
 public:
@@ -65,6 +67,45 @@ public:
         );
 
         return true;
+    }
+
+    virtual double pdf_value(
+        const point3& origin,
+        const vec3& direction
+    ) const override {
+
+        hit_record rec;
+
+        if (!this->hit(
+                ray(origin, direction),
+                interval(0.001, infinity),
+                rec))
+            return 0;
+
+        double area = (x1 - x0) * (y1 - y0);
+
+        double distance_squared =
+            rec.t * rec.t *
+            direction.length_squared();
+
+        double cosine =
+            fabs(dot(direction, rec.normal)
+                 / direction.length());
+
+        return distance_squared / (cosine * area);
+    }
+
+    virtual vec3 random(
+        const point3& origin
+    ) const override {
+
+        auto random_point = point3(
+            random_double(x0, x1),
+            random_double(y0, y1),
+            k
+        );
+
+        return random_point - origin;
     }
 
 private:

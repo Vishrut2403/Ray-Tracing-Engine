@@ -1,11 +1,12 @@
 #include "rtweekend.h"
 #include <filesystem>
-
 #include <fstream>
 #include <iostream>
 #include <string>
 
 #include "hittable_list.h"
+#include "hittable_pdf.h"
+#include "mixture_pdf.h"
 #include "camera.h"
 #include "bvh.h"
 #include "core/interval.h"
@@ -25,6 +26,7 @@ color ray_color(
     const ray& r,
     const color& background,
     const hittable& world,
+    const shared_ptr<hittable>& lights,
     int depth
 ) {
     hit_record rec;
@@ -36,66 +38,78 @@ color ray_color(
         return background;
 
     color emitted =
-        rec.mat_ptr->emitted(
-            r, rec, rec.u, rec.v, rec.p);
+        rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
 
     scatter_record srec;
 
     if (!rec.mat_ptr->scatter(r, rec, srec))
         return emitted;
 
+    // Specular (delta) branch
     if (srec.is_specular) {
-        return srec.attenuation *
+        return emitted +
+               srec.attenuation *
                ray_color(
                    srec.specular_ray,
                    background,
                    world,
-                   depth - 1);
+                   lights,
+                   depth - 1
+               );
     }
+
+    // Light sampling
+    auto light_pdf =
+        make_shared<hittable_pdf>(lights, rec.p);
+
+    mixture_pdf mixed_pdf(light_pdf, srec.pdf_ptr);
 
     ray scattered(
         rec.p,
-        srec.pdf_ptr->generate(),
+        mixed_pdf.generate(),
         r.time()
     );
 
     double pdf_val =
-        srec.pdf_ptr->value(
-            scattered.direction()
-        );
+        mixed_pdf.value(scattered.direction());
 
     if (pdf_val <= 0)
         return emitted;
 
+    double scattering_pdf =
+        rec.mat_ptr->scattering_pdf(
+            r, rec, scattered);
+
     return emitted +
            srec.attenuation *
-           rec.mat_ptr->scattering_pdf(
-               r, rec, scattered
-           ) *
+           scattering_pdf *
            ray_color(
                scattered,
                background,
                world,
+               lights,
                depth - 1
            ) / pdf_val;
 }
 
 int main(int argc, char** argv) {
 
+    // -------------------------------------------------
     // Render Parameters
+    // -------------------------------------------------
     const double aspect_ratio = 1.0;
     const int image_width  = 400;
     const int image_height = 400;
-    const int samples_per_pixel = 10;
+    const int samples_per_pixel = 200;
     const int max_depth = 20;
 
-    // Output file
-
+    // -------------------------------------------------
+    // Output Setup
+    // -------------------------------------------------
     std::string filename = "cornell.ppm";
 
     if (argc > 1) {
         filename = argv[1];
-
         if (filename.size() < 4 ||
             filename.substr(filename.size() - 4) != ".ppm") {
             filename += ".ppm";
@@ -105,19 +119,15 @@ int main(int argc, char** argv) {
     namespace fs = std::filesystem;
 
     fs::path build_dir = fs::current_path();
-
     fs::path project_root = build_dir.parent_path();
-
     fs::path render_dir = project_root / "renders" / "book2";
-
     fs::create_directories(render_dir);
-
     fs::path filepath = render_dir / filename;
 
     std::ofstream out(filepath);
     if (!out) {
         std::cerr << "Error: Could not open file: "
-                << filepath << "\n";
+                  << filepath << "\n";
         return 1;
     }
 
@@ -125,20 +135,29 @@ int main(int argc, char** argv) {
         << image_width << " "
         << image_height << "\n255\n";
 
+    // -------------------------------------------------
+    // Scene Construction (Cornell Box)
+    // -------------------------------------------------
 
     hittable_list world;
+    hittable_list lights;
 
     auto red   = std::make_shared<lambertian>(color(.65, .05, .05));
     auto white = std::make_shared<lambertian>(color(.73, .73, .73));
     auto green = std::make_shared<lambertian>(color(.12, .45, .15));
     auto light = std::make_shared<diffuse_light>(color(15, 15, 15));
 
+    // Walls
     world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
     world.add(std::make_shared<flip_face>(
         std::make_shared<yz_rect>(0,555,0,555,0, red)));
 
-    world.add(std::make_shared<flip_face>(
-        std::make_shared<xz_rect>(213,343,227,332,554, light)));
+    // Ceiling light (ADD TO BOTH world AND lights)
+    auto ceiling_light =
+        std::make_shared<xz_rect>(213,343,227,332,554, light);
+
+    world.add(std::make_shared<flip_face>(ceiling_light));
+    lights.add(ceiling_light);
 
     world.add(std::make_shared<xz_rect>(0,555,0,555,0, white));
     world.add(std::make_shared<flip_face>(
@@ -146,6 +165,7 @@ int main(int argc, char** argv) {
     world.add(std::make_shared<flip_face>(
         std::make_shared<xy_rect>(0,555,0,555,555, white)));
 
+    // Boxes
     std::shared_ptr<hittable> box1 =
         std::make_shared<box>(
             point3(0,0,0),
@@ -166,7 +186,10 @@ int main(int argc, char** argv) {
     box2 = std::make_shared<translate>(box2, vec3(130,0,65));
     world.add(box2);
 
-    // Wrap world in BVH
+    // -------------------------------------------------
+    // BVH Acceleration
+    // -------------------------------------------------
+
     world = hittable_list(
         std::make_shared<bvh_node>(
             world.objects,
@@ -177,7 +200,12 @@ int main(int argc, char** argv) {
         )
     );
 
+    auto lights_ptr =
+        std::make_shared<hittable_list>(lights);
+
+    // -------------------------------------------------
     // Camera
+    // -------------------------------------------------
 
     point3 lookfrom(278,278,-800);
     point3 lookat(278,278,0);
@@ -197,7 +225,9 @@ int main(int argc, char** argv) {
 
     color background(0,0,0);
 
+    // -------------------------------------------------
     // Render Loop
+    // -------------------------------------------------
 
     for (int j = image_height - 1; j >= 0; --j) {
 
@@ -215,7 +245,14 @@ int main(int argc, char** argv) {
                 auto v = (j + random_double()) / (image_height - 1);
 
                 ray r = cam.get_ray(u, v);
-                pixel_color += ray_color(r, background, world, max_depth);
+
+                pixel_color += ray_color(
+                    r,
+                    background,
+                    world,
+                    lights_ptr,
+                    max_depth
+                );
             }
 
             auto scale = 1.0 / samples_per_pixel;
@@ -235,11 +272,10 @@ int main(int argc, char** argv) {
     }
 
     std::cerr << "\nRender complete.\n";
-
     out.close();
 
     std::cout << "Saved to: "
-            << filepath.string() << "\n";
+              << filepath.string() << "\n";
 
     return 0;
 }

@@ -19,4 +19,5 @@ target_include_directories(render PRIVATE
     src/textures
     src/acceleration
     src/external
+    src/pdfs
 )

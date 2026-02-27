@@ -3,6 +3,7 @@
 #include <memory>
 #include "hittable.h"
 #include "aabb.h"
+#include "rtweekend.h"
 
 class yz_rect : public hittable {
 public:
@@ -61,13 +62,51 @@ public:
         aabb& output_box
     ) const override {
 
-        // Small padding in X for non-zero thickness
         output_box = aabb(
             point3(k - 0.0001, y0, z0),
             point3(k + 0.0001, y1, z1)
         );
 
         return true;
+    }
+
+    virtual double pdf_value(
+        const point3& origin,
+        const vec3& direction
+    ) const override {
+
+        hit_record rec;
+
+        if (!this->hit(
+                ray(origin, direction),
+                interval(0.001, infinity),
+                rec))
+            return 0;
+
+        double area = (y1 - y0) * (z1 - z0);
+
+        double distance_squared =
+            rec.t * rec.t *
+            direction.length_squared();
+
+        double cosine =
+            fabs(dot(direction, rec.normal)
+                 / direction.length());
+
+        return distance_squared / (cosine * area);
+    }
+
+    virtual vec3 random(
+        const point3& origin
+    ) const override {
+
+        auto random_point = point3(
+            k,
+            random_double(y0, y1),
+            random_double(z0, z1)
+        );
+
+        return random_point - origin;
     }
 
 private:

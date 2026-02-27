@@ -11,6 +11,7 @@ public:
     std::vector<std::shared_ptr<hittable>> objects;
 
     hittable_list() {}
+
     hittable_list(std::shared_ptr<hittable> object) {
         add(object);
     }
@@ -31,11 +32,9 @@ public:
 
         hit_record temp_rec;
         bool hit_anything = false;
-
         auto closest_so_far = ray_t.max;
 
         for (const auto& object : objects) {
-
             if (object->hit(r,
                             interval(ray_t.min, closest_so_far),
                             temp_rec)) {
@@ -74,6 +73,37 @@ public:
         }
 
         return true;
+    }
+
+    virtual double pdf_value(
+        const point3& origin,
+        const vec3& direction
+    ) const override {
+
+        if (objects.empty())
+            return 0.0;
+
+        double weight = 1.0 / objects.size();
+        double sum = 0.0;
+
+        for (const auto& object : objects)
+            sum += weight * object->pdf_value(origin, direction);
+
+        return sum;
+    }
+
+    virtual vec3 random(
+        const point3& origin
+    ) const override {
+
+        if (objects.empty())
+            return vec3(1, 0, 0);
+
+        int index = static_cast<int>(
+            random_double(0, objects.size())
+        );
+
+        return objects[index]->random(origin);
     }
 };
 
