@@ -1,14 +1,34 @@
 #ifndef MATERIAL_H
 #define MATERIAL_H
 
-#include "core/rtweekend.h"
-#include "core/pdf.h"
-#include "hittables/hittable.h"
-#include "textures/texture.h"
+#include "rtweekend.h"
+#include "pdf.h"
+#include "onb.h"
 #include "random.h"
+#include "cosine_pdf.h"
+
+#include "hittable.h"
+#include "texture.h"
+
+//////////////////////////////////////////////////////////////
+// Scatter Record (Book 2 Architecture)
+//////////////////////////////////////////////////////////////
+
+struct scatter_record {
+    ray specular_ray;
+    bool is_specular;
+    color attenuation;
+    std::shared_ptr<pdf> pdf_ptr;
+};
+
+//////////////////////////////////////////////////////////////
+// Base Material
+//////////////////////////////////////////////////////////////
 
 class material {
 public:
+    virtual ~material() = default;
+
     virtual color emitted(
         const ray& r_in,
         const hit_record& rec,
@@ -22,9 +42,7 @@ public:
     virtual bool scatter(
         const ray& r_in,
         const hit_record& rec,
-        color& attenuation,
-        ray& scattered,
-        double& pdf
+        scatter_record& srec
     ) const {
         return false;
     }
@@ -39,7 +57,7 @@ public:
 };
 
 //////////////////////////////////////////////////////////////
-// Lambertian (Diffuse)
+// Lambertian (Diffuse BRDF)
 //////////////////////////////////////////////////////////////
 
 class lambertian : public material {
@@ -55,23 +73,15 @@ public:
     virtual bool scatter(
         const ray& r_in,
         const hit_record& rec,
-        color& attenuation,
-        ray& scattered,
-        double& pdf
+        scatter_record& srec
     ) const override {
 
-        vec3 scatter_direction =
-            rec.normal + random_unit_vector();
-
-        scattered = ray(rec.p,
-                        unit_vector(scatter_direction),
-                        r_in.time());
-
-        attenuation =
+        srec.is_specular = false;
+        srec.attenuation =
             albedo->value(rec.u, rec.v, rec.p);
 
-        pdf = dot(rec.normal,
-                  scattered.direction()) / pi;
+        srec.pdf_ptr =
+            std::make_shared<cosine_pdf>(rec.normal);
 
         return true;
     }
@@ -86,12 +96,12 @@ public:
             dot(rec.normal,
                 unit_vector(scattered.direction()));
 
-        return cosine < 0 ? 0 : cosine / pi;
+        return (cosine < 0) ? 0 : cosine / pi;
     }
 };
 
 //////////////////////////////////////////////////////////////
-// Metal (Specular Reflection — Delta Distribution)
+// Metal (Perfect Specular / Delta)
 //////////////////////////////////////////////////////////////
 
 class metal : public material {
@@ -105,36 +115,35 @@ public:
     virtual bool scatter(
         const ray& r_in,
         const hit_record& rec,
-        color& attenuation,
-        ray& scattered,
-        double& pdf
+        scatter_record& srec
     ) const override {
 
         vec3 reflected =
             reflect(unit_vector(r_in.direction()),
                     rec.normal);
 
-        scattered = ray(
+        srec.specular_ray = ray(
             rec.p,
             reflected + fuzz * random_in_unit_sphere(),
             r_in.time()
         );
 
-        attenuation = albedo;
-        pdf = 1.0; // delta distribution
+        srec.attenuation = albedo;
+        srec.is_specular = true;
+        srec.pdf_ptr = nullptr;
 
-        return (dot(scattered.direction(),
+        return (dot(srec.specular_ray.direction(),
                     rec.normal) > 0);
     }
 };
 
 //////////////////////////////////////////////////////////////
-// Dielectric (Glass — Delta Distribution)
+// Dielectric (Glass / Delta)
 //////////////////////////////////////////////////////////////
 
 class dielectric : public material {
 public:
-    double ir; // Index of refraction
+    double ir;
 
     dielectric(double index_of_refraction)
         : ir(index_of_refraction) {}
@@ -142,18 +151,15 @@ public:
     virtual bool scatter(
         const ray& r_in,
         const hit_record& rec,
-        color& attenuation,
-        ray& scattered,
-        double& pdf
+        scatter_record& srec
     ) const override {
 
-        attenuation = color(1.0, 1.0, 1.0);
-        pdf = 1.0; // delta distribution
+        srec.is_specular = true;
+        srec.pdf_ptr = nullptr;
+        srec.attenuation = color(1.0, 1.0, 1.0);
 
         double refraction_ratio =
-            rec.front_face
-            ? (1.0 / ir)
-            : ir;
+            rec.front_face ? (1.0 / ir) : ir;
 
         vec3 unit_direction =
             unit_vector(r_in.direction());
@@ -185,10 +191,8 @@ public:
                         refraction_ratio);
         }
 
-        scattered =
-            ray(rec.p,
-                direction,
-                r_in.time());
+        srec.specular_ray =
+            ray(rec.p, direction, r_in.time());
 
         return true;
     }

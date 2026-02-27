@@ -20,6 +20,10 @@
 #include "material.h"
 #include "diffuse_light.h"
 
+//////////////////////////////////////////////////////////////
+// Path Tracing Integrator (Book 2 Architecture)
+//////////////////////////////////////////////////////////////
+
 color ray_color(
     const ray& r,
     const color& background,
@@ -28,75 +32,74 @@ color ray_color(
 ) {
     hit_record rec;
 
-    // Recursion limit
     if (depth <= 0)
         return color(0,0,0);
 
-    // Miss → environment
     if (!world.hit(r, interval(0.001, infinity), rec))
         return background;
 
-    ray scattered;
-    color attenuation;
-    double pdf;
-
     color emitted =
         rec.mat_ptr->emitted(
-            r,
-            rec,
-            rec.u,
-            rec.v,
-            rec.p
-        );
+            r, rec, rec.u, rec.v, rec.p);
 
-    // No scattering → pure emission
-    if (!rec.mat_ptr->scatter(
-            r, rec, attenuation, scattered, pdf))
+    scatter_record srec;
+
+    if (!rec.mat_ptr->scatter(r, rec, srec))
         return emitted;
 
-    double scattering_pdf =
-        rec.mat_ptr->scattering_pdf(
-            r, rec, scattered
-        );
-
-    // Specular (metal / dielectric)
-    if (scattering_pdf == 0) {
-        return emitted +
-               attenuation *
+    // Delta distribution (metal / dielectric)
+    if (srec.is_specular) {
+        return srec.attenuation *
                ray_color(
-                   scattered,
+                   srec.specular_ray,
                    background,
                    world,
-                   depth - 1
-               );
+                   depth - 1);
     }
 
-    // Diffuse (Lambertian)
+    // PDF-based scattering (Lambertian)
+    ray scattered(
+        rec.p,
+        srec.pdf_ptr->generate(),
+        r.time()
+    );
+
+    double pdf_val =
+        srec.pdf_ptr->value(
+            scattered.direction()
+        );
+
+    // Prevent division by zero
+    if (pdf_val <= 0)
+        return emitted;
+
     return emitted +
-           attenuation *
-           scattering_pdf *
+           srec.attenuation *
+           rec.mat_ptr->scattering_pdf(
+               r, rec, scattered
+           ) *
            ray_color(
                scattered,
                background,
                world,
                depth - 1
-           ) / pdf;
+           ) / pdf_val;
 }
+
+//////////////////////////////////////////////////////////////
+// Main
+//////////////////////////////////////////////////////////////
 
 int main(int argc, char** argv) {
 
-    // Render Parameters 
-
+    // Render Parameters
     const double aspect_ratio = 1.0;
-
-    const int image_width  = 400;   // e.g. 400 (dev) or 600+ (final)
+    const int image_width  = 400;
     const int image_height = 400;
+    const int samples_per_pixel = 100;
+    const int max_depth = 20;
 
-    const int samples_per_pixel = 100;  // e.g. 50 (dev) or 500+ (final)
-    const int max_depth         = 20;  // e.g. 20 (dev) or 50  (final)
-
-    // Output File
-
+    // Output file
     std::string filename = "cornell.ppm";
     if (argc > 1) filename = argv[1];
 
@@ -113,7 +116,9 @@ int main(int argc, char** argv) {
         << image_width << " "
         << image_height << "\n255\n";
 
+    //////////////////////////////////////////////////////////
     // Cornell Box Scene
+    //////////////////////////////////////////////////////////
 
     hittable_list world;
 
@@ -124,20 +129,16 @@ int main(int argc, char** argv) {
 
     world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
     world.add(std::make_shared<flip_face>(
-        std::make_shared<yz_rect>(0,555,0,555,0, red)
-    ));
+        std::make_shared<yz_rect>(0,555,0,555,0, red)));
 
     world.add(std::make_shared<flip_face>(
-        std::make_shared<xz_rect>(213,343,227,332,554, light)
-    ));
+        std::make_shared<xz_rect>(213,343,227,332,554, light)));
 
     world.add(std::make_shared<xz_rect>(0,555,0,555,0, white));
     world.add(std::make_shared<flip_face>(
-        std::make_shared<xz_rect>(0,555,0,555,555, white)
-    ));
+        std::make_shared<xz_rect>(0,555,0,555,555, white)));
     world.add(std::make_shared<flip_face>(
-        std::make_shared<xy_rect>(0,555,0,555,555, white)
-    ));
+        std::make_shared<xy_rect>(0,555,0,555,555, white)));
 
     std::shared_ptr<hittable> box1 =
         std::make_shared<box>(
@@ -159,6 +160,7 @@ int main(int argc, char** argv) {
     box2 = std::make_shared<translate>(box2, vec3(130,0,65));
     world.add(box2);
 
+    // Wrap world in BVH
     world = hittable_list(
         std::make_shared<bvh_node>(
             world.objects,
@@ -169,7 +171,9 @@ int main(int argc, char** argv) {
         )
     );
 
+    //////////////////////////////////////////////////////////
     // Camera
+    //////////////////////////////////////////////////////////
 
     point3 lookfrom(278,278,-800);
     point3 lookat(278,278,0);
@@ -189,7 +193,9 @@ int main(int argc, char** argv) {
 
     color background(0,0,0);
 
+    //////////////////////////////////////////////////////////
     // Render Loop
+    //////////////////////////////////////////////////////////
 
     for (int j = image_height - 1; j >= 0; --j) {
 
