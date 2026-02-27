@@ -826,7 +826,6 @@ Max Depth: 50
 
 ---
 
----
 
 ## Render Performance Notes
 
@@ -869,9 +868,121 @@ This is over 20× faster.
 
 Added scanline progress reporting to the render loop:
 
-```cpp
-std::cerr << "\rScanlines remaining: "
-          << j << " / " << image_height
-          << std::flush;
+---
+
+## Orthonormal Basis (ONB)
+
+To sample directions relative to a surface normal, we need a local coordinate frame.
+
+An Orthonormal Basis (ONB) is:
+
+    u, v, w
+
+Where:
+- w = surface normal
+- u, v = perpendicular vectors forming tangent space
+
+This allows us to:
+1. Generate a direction in local space
+2. Convert it into world space
 
 ---
+
+## Cosine-Weighted Sampling
+
+Lambertian BRDF includes a cosine term:
+
+    f_r = albedo / π
+
+To reduce variance, we sample directions proportional to:
+
+    cos(theta)
+
+The probability density becomes:
+
+    pdf = cos(theta) / π
+
+We generate directions using spherical coordinates:
+
+    r1 = random()
+    r2 = random()
+
+    z = sqrt(1 - r2)
+    phi = 2π r1
+    x = cos(phi) * sqrt(r2)
+    y = sin(phi) * sqrt(r2)
+
+---
+
+# Importance Sampling & Probability Density Functions (PDF)
+
+## Why the Need of PDFs
+
+Current renderer uses naive recursive scattering:
+
+    emitted + attenuation * ray_color(scattered)
+
+This produces correct images but:
+
+- Converges slowly  
+- Produces high noise  
+- Samples directions inefficiently  
+
+Switch to Monte Carlo integration using probability density functions.
+
+---
+
+## Rendering Equation 
+
+The outgoing radiance is:
+
+    L_o = L_e + ∫ f_r * L_i * cos(theta) dω
+
+Where:
+
+- `f_r` = BRDF  
+- `L_i` = incoming light  
+- `cos(theta)` = geometric term  
+- `dω` = differential solid angle  
+
+We approximate the integral using sampling:
+
+    L ≈ (f_r * L_i * cos(theta)) / pdf(direction)
+
+---
+
+## What is a PDF?
+
+A Probability Density Function defines:
+
+- How likely we are to sample a direction  
+- Used to weight contributions correctly  
+
+If we sample direction `ω` using `pdf(ω)`, then:
+
+    contribution = value / pdf(ω)
+
+---
+
+## Strategy
+
+We will implement:
+
+1. `pdf` base class  
+2. `cosine_pdf` (for Lambertian surfaces)  
+3. `hittable_pdf` (for sampling light sources)  
+4. `mixture_pdf` (for combining sampling strategies)  
+5. Modify material system to support scattering PDFs  
+6. Update `ray_color()` to use proper Monte Carlo integration  
+
+---
+
+## Architectural Goal
+
+Move from:
+
+    attenuation * recursive bounce
+
+To:
+
+    emitted + scattering_pdf * recursive_bounce / pdf_value
