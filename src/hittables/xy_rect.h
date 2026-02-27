@@ -59,7 +59,6 @@ public:
         aabb& output_box
     ) const override {
 
-        // Thickness padding required for AABB
         output_box = aabb(
             point3(x0, y0, k - 0.0001),
             point3(x1, y1, k + 0.0001)

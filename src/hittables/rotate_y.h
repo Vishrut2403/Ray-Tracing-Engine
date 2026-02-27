@@ -49,7 +49,6 @@ point3 max(-infinity, -infinity, -infinity);
         hit_record& rec
     ) const override {
 
-        // Rotate ray into object space
         auto origin = r.origin();
         auto direction = r.direction();
 
@@ -70,7 +69,6 @@ point3 max(-infinity, -infinity, -infinity);
         if (!ptr->hit(rotated_r, ray_t, rec))
             return false;
 
-        // Rotate hit point and normal back to world space
         auto p = rec.p;
         auto normal = rec.normal;
 
@@ -88,8 +86,6 @@ point3 max(-infinity, -infinity, -infinity);
 
         rec.p = p;
 
-        // IMPORTANT:
-        // set_face_normal must use the original ray
         rec.set_face_normal(r, normal);
 
         return true;

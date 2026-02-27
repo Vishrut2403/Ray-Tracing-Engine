@@ -6,9 +6,6 @@
 
 #include "vec3.h"
 
-//////////////////////////////////////////////////////////////
-// Basic Random Numbers
-//////////////////////////////////////////////////////////////
 
 inline double random_double() {
     return rand() / (RAND_MAX + 1.0);
@@ -22,10 +19,6 @@ inline int random_int(int min, int max) {
     return static_cast<int>(random_double(min, max + 1));
 }
 
-//////////////////////////////////////////////////////////////
-// Random Vectors
-//////////////////////////////////////////////////////////////
-
 inline vec3 random_vec3() {
     return vec3(random_double(),
                 random_double(),
@@ -38,9 +31,6 @@ inline vec3 random_vec3(double min, double max) {
                 random_double(min, max));
 }
 
-//////////////////////////////////////////////////////////////
-// Unit Sphere
-//////////////////////////////////////////////////////////////
 
 inline vec3 random_in_unit_sphere() {
     while (true) {
@@ -55,10 +45,6 @@ inline vec3 random_unit_vector() {
     return unit_vector(random_in_unit_sphere());
 }
 
-//////////////////////////////////////////////////////////////
-// Disk (DOF)
-//////////////////////////////////////////////////////////////
-
 inline vec3 random_in_unit_disk() {
     while (true) {
         vec3 p(random_double(-1,1),
@@ -71,10 +57,6 @@ inline vec3 random_in_unit_disk() {
         return p;
     }
 }
-
-//////////////////////////////////////////////////////////////
-// Cosine PDF
-//////////////////////////////////////////////////////////////
 
 inline vec3 random_cosine_direction() {
     constexpr double local_pi = 3.1415926535897932385;

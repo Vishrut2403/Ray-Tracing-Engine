@@ -42,7 +42,6 @@ public:
 
         auto sqrtd = std::sqrt(discriminant);
 
-        // Find nearest valid root within interval
         auto root = (-half_b - sqrtd) / a;
         if (!ray_t.surrounds(root)) {
             root = (-half_b + sqrtd) / a;

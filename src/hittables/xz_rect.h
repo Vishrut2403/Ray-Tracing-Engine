@@ -59,7 +59,6 @@ public:
         aabb& output_box
     ) const override {
 
-        // Thin padding in Y for AABB validity
         output_box = aabb(
             point3(x0, k - 0.0001, z0),
             point3(x1, k + 0.0001, z1)

@@ -21,10 +21,6 @@
 #include "material.h"
 #include "diffuse_light.h"
 
-//////////////////////////////////////////////////////////////
-// Path Tracing Integrator (Book 2 Architecture)
-//////////////////////////////////////////////////////////////
-
 color ray_color(
     const ray& r,
     const color& background,
@@ -48,7 +44,6 @@ color ray_color(
     if (!rec.mat_ptr->scatter(r, rec, srec))
         return emitted;
 
-    // Delta distribution (metal / dielectric)
     if (srec.is_specular) {
         return srec.attenuation *
                ray_color(
@@ -58,7 +53,6 @@ color ray_color(
                    depth - 1);
     }
 
-    // PDF-based scattering (Lambertian)
     ray scattered(
         rec.p,
         srec.pdf_ptr->generate(),
@@ -70,7 +64,6 @@ color ray_color(
             scattered.direction()
         );
 
-    // Prevent division by zero
     if (pdf_val <= 0)
         return emitted;
 
@@ -87,10 +80,6 @@ color ray_color(
            ) / pdf_val;
 }
 
-//////////////////////////////////////////////////////////////
-// Main
-//////////////////////////////////////////////////////////////
-
 int main(int argc, char** argv) {
 
     // Render Parameters
@@ -101,17 +90,12 @@ int main(int argc, char** argv) {
     const int max_depth = 20;
 
     // Output file
-    // ============================================================
-    // Output File Setup (CLI + Robust Path Handling)
-    // ============================================================
 
     std::string filename = "cornell.ppm";
 
-    // CLI filename override
     if (argc > 1) {
         filename = argv[1];
 
-        // Auto-append .ppm if missing
         if (filename.size() < 4 ||
             filename.substr(filename.size() - 4) != ".ppm") {
             filename += ".ppm";
@@ -120,22 +104,16 @@ int main(int argc, char** argv) {
 
     namespace fs = std::filesystem;
 
-    // We are executing from the build directory
     fs::path build_dir = fs::current_path();
 
-    // Project root is one level above build/
     fs::path project_root = build_dir.parent_path();
 
-    // Target directory: renders/book2
     fs::path render_dir = project_root / "renders" / "book2";
 
-    // Create directory if it doesn't exist
     fs::create_directories(render_dir);
 
-    // Final output path
     fs::path filepath = render_dir / filename;
 
-    // Open file
     std::ofstream out(filepath);
     if (!out) {
         std::cerr << "Error: Could not open file: "
@@ -143,14 +121,10 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    // Write PPM header
     out << "P3\n"
         << image_width << " "
         << image_height << "\n255\n";
 
-    //////////////////////////////////////////////////////////
-    // Cornell Box Scene
-    //////////////////////////////////////////////////////////
 
     hittable_list world;
 
@@ -203,9 +177,7 @@ int main(int argc, char** argv) {
         )
     );
 
-    //////////////////////////////////////////////////////////
     // Camera
-    //////////////////////////////////////////////////////////
 
     point3 lookfrom(278,278,-800);
     point3 lookat(278,278,0);
@@ -225,9 +197,7 @@ int main(int argc, char** argv) {
 
     color background(0,0,0);
 
-    //////////////////////////////////////////////////////////
     // Render Loop
-    //////////////////////////////////////////////////////////
 
     for (int j = image_height - 1; j >= 0; --j) {
 

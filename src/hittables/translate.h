@@ -15,7 +15,6 @@ public:
         hit_record& rec
     ) const override {
 
-        // Move ray into object space
         ray moved_r(
             r.origin() - offset,
             r.direction(),
@@ -25,11 +24,8 @@ public:
         if (!ptr->hit(moved_r, ray_t, rec))
             return false;
 
-        // Move intersection point back to world space
         rec.p += offset;
 
-        // IMPORTANT:
-        // set_face_normal must use the moved ray
         rec.set_face_normal(moved_r, rec.normal);
 
         return true;
