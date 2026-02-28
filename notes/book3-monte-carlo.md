@@ -155,3 +155,189 @@ double cosine =
          / direction.length());
 
 return distance_squared / (cosine * area);
+```
+
+---
+
+# Book 3 – Importance Sampling (Theory)
+
+Based on:
+Ray Tracing: The Rest of Your Life
+
+---
+
+## 1. Monte Carlo Estimator
+
+We want to compute:
+
+\[
+I = \int f(x) dx
+\]
+
+Monte Carlo approximation:
+
+\[
+I \approx \frac{1}{N} \sum_{i=1}^{N} \frac{f(x_i)}{p(x_i)}
+\]
+
+Where:
+- \( p(x) \) is the sampling PDF
+- \( x_i \sim p(x) \)
+
+The estimator is unbiased if:
+
+\[
+p(x) > 0 \quad \text{whenever} \quad f(x) > 0
+\]
+
+---
+
+## 2. Why Uniform Sampling Fails
+
+If we sample uniformly:
+
+\[
+p(x) = constant
+\]
+
+but \( f(x) \) varies strongly, then:
+
+- Many samples contribute almost nothing
+- A few samples contribute large values
+- Variance becomes high
+
+This produces noise in rendered images.
+
+---
+
+## 3. Importance Sampling
+
+Instead of sampling uniformly, we choose:
+
+\[
+p(x) \propto f(x)
+\]
+
+Then:
+
+\[
+\frac{f(x)}{p(x)} \approx constant
+\]
+
+This reduces variance dramatically.
+
+---
+
+## 4. Cosine-Weighted Sampling
+
+For Lambertian surfaces:
+
+\[
+f(\omega) = \frac{albedo}{\pi}
+\]
+
+Rendering equation includes:
+
+\[
+f(\omega) \cos\theta
+\]
+
+So ideal sampling PDF is:
+
+\[
+p(\omega) = \frac{\cos\theta}{\pi}
+\]
+
+This is why we use cosine-weighted hemisphere sampling.
+
+---
+
+## 5. Explicit Light Sampling
+
+Instead of hoping a random bounce hits a light:
+
+We directly sample the light’s surface.
+
+Area PDF:
+
+\[
+p_A = \frac{1}{Area}
+\]
+
+Converted to solid angle PDF:
+
+\[
+p_\omega = \frac{distance^2}{\cos\theta \cdot Area}
+\]
+
+This drastically reduces variance for direct lighting.
+
+---
+
+## 6. Multiple Importance Sampling (MIS)
+
+We combine two PDFs:
+
+\[
+p_{mix} = \frac{1}{2} p_{light} + \frac{1}{2} p_{brdf}
+\]
+
+Final estimator:
+
+\[
+L = L_e + \frac{f(\omega) L_i(\omega)}{p_{mix}(\omega)}
+\]
+
+MIS prevents either PDF from dominating poorly in difficult lighting configurations.
+
+---
+
+## 7. Russian Roulette
+
+To prevent infinite recursion:
+
+We terminate paths probabilistically:
+
+If survival probability = \( p \),
+
+Then scale contribution by:
+
+\[
+\frac{1}{p}
+\]
+
+This keeps the estimator unbiased.
+
+---
+
+## 8. Participating Media
+
+For isotropic scattering:
+
+\[
+f(\omega) = \frac{1}{4\pi}
+\]
+
+We sample uniformly over the sphere:
+
+\[
+p(\omega) = \frac{1}{4\pi}
+\]
+
+Since \( f = p \), estimator simplifies.
+
+Free-flight distance is sampled via exponential distribution:
+
+\[
+d = -\frac{1}{\sigma} \ln(\xi)
+\]
+
+---
+
+## 9. Key Insight of Book 3
+
+Rendering quality is not about more samples.
+
+It is about choosing the correct PDF.
+
+Variance reduction comes from matching the sampling distribution to the integrand.

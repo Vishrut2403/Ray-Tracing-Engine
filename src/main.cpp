@@ -77,9 +77,7 @@ color ray_color(
         srec.attenuation /= survival_prob;
     }
 
-    // ------------------------------
     // Light sampling (MIS)
-    // ------------------------------
     auto light_pdf =
         make_shared<hittable_pdf>(lights, rec.p);
 
@@ -129,9 +127,9 @@ int main(int argc, char** argv) {
     }
 
     const double aspect_ratio = 1.0;
-    const int image_width  = 800;
-    const int image_height = 800;
-    const int samples_per_pixel = 800;
+    const int image_width  = 400;
+    const int image_height = 400;
+    const int samples_per_pixel = 1000;
     const int max_depth = 50;  
 
     std::string filename = "cornell.ppm";
