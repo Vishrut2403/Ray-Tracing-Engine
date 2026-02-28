@@ -5,7 +5,7 @@
 #include <string>
 #include <omp.h>
 #include <atomic>
-
+#include <algorithm>
 #include "hittable_list.h"
 #include "hittable_pdf.h"
 #include "mixture_pdf.h"
@@ -13,7 +13,6 @@
 #include "bvh.h"
 #include "core/interval.h"
 #include "constant_medium.h"
-
 
 #include "xy_rect.h"
 #include "xz_rect.h"
@@ -49,7 +48,6 @@ color ray_color(
     if (!rec.mat_ptr->scatter(r, rec, srec))
         return emitted;
 
-    // Specular (delta) branch
     if (srec.is_specular) {
         return emitted +
                srec.attenuation *
@@ -62,7 +60,26 @@ color ray_color(
                );
     }
 
-    // Light sampling
+    if (depth < 5) {
+        // Always survive early bounces
+    } else {
+            double max_component =
+                std::max({ srec.attenuation.x(),
+                    srec.attenuation.y(),
+                    srec.attenuation.z() });
+
+            double survival_prob =
+                std::min(0.95, max_component);
+
+        if (random_double() > survival_prob)
+            return emitted;
+
+        srec.attenuation /= survival_prob;
+    }
+
+    // ------------------------------
+    // Light sampling (MIS)
+    // ------------------------------
     auto light_pdf =
         make_shared<hittable_pdf>(lights, rec.p);
 
@@ -77,7 +94,7 @@ color ray_color(
     double pdf_val =
         mixed_pdf.value(scattered.direction());
 
-    if (pdf_val <= 0)
+    if (pdf_val <= 1e-8)
         return emitted;
 
     double scattering_pdf =
@@ -96,12 +113,13 @@ color ray_color(
            ) / pdf_val;
 }
 
+
 int main(int argc, char** argv) {
 
-    std::cout << "Max Threads:"
+    std::cout << "Max Threads: "
               << omp_get_max_threads()
               << "\n";
-              
+
     #pragma omp parallel
     {
         #pragma omp single
@@ -114,7 +132,7 @@ int main(int argc, char** argv) {
     const int image_width  = 800;
     const int image_height = 800;
     const int samples_per_pixel = 800;
-    const int max_depth = 20;
+    const int max_depth = 50;  
 
     std::string filename = "cornell.ppm";
 
@@ -130,7 +148,9 @@ int main(int argc, char** argv) {
 
     fs::path build_dir = fs::current_path();
     fs::path project_root = build_dir.parent_path();
-    fs::path render_dir = project_root/ "Ray-Tracing-Engine" / "renders" / "book2";
+    fs::path render_dir =
+        project_root / "Ray-Tracing-Engine" / "renders" / "book3";
+
     fs::create_directories(render_dir);
     fs::path filepath = render_dir / filename;
 
@@ -145,7 +165,7 @@ int main(int argc, char** argv) {
         << image_width << " "
         << image_height << "\n255\n";
 
-
+    // Scene: Cornell Box with Participating Media
 
     hittable_list world;
     hittable_list lights;
@@ -180,14 +200,12 @@ int main(int argc, char** argv) {
     box1 = std::make_shared<rotate_y>(box1, 15);
     box1 = std::make_shared<translate>(box1, vec3(265,0,295));
 
-    // Add boundary geometry
     world.add(box1);
 
-    // Wrap boundary with constant medium
     world.add(std::make_shared<constant_medium>(
         box1,
-        0.01,                 // density
-        color(0,0,0)          // black smoke
+        0.01,
+        color(0,0,0)
     ));
 
     std::shared_ptr<hittable> box2 =
@@ -198,10 +216,11 @@ int main(int argc, char** argv) {
 
     box2 = std::make_shared<rotate_y>(box2, -18);
     box2 = std::make_shared<translate>(box2, vec3(130,0,65));
+
     world.add(std::make_shared<constant_medium>(
         box2,
         0.01,
-        color(1,1,1)          // white fog
+        color(1,1,1)
     ));
 
     world = hittable_list(
@@ -236,9 +255,7 @@ int main(int argc, char** argv) {
     color background(0,0,0);
 
     std::vector<color> framebuffer(image_width * image_height);
-
     std::atomic<int> rows_done = 0;
-
 
     #pragma omp parallel for schedule(dynamic)
     for (int j = 0; j < image_height; ++j) {
@@ -271,12 +288,14 @@ int main(int argc, char** argv) {
         #pragma omp critical
         {
             std::cerr << "\rScanlines completed: "
-                  << done << " / " << image_height
-                  << std::flush;
+                      << done << " / "
+                      << image_height
+                      << std::flush;
         }
     }
 
     std::cerr << "\nRendering finished.\n";
+
 
     for (int j = image_height - 1; j >= 0; --j) {
         for (int i = 0; i < image_width; ++i) {
@@ -299,8 +318,6 @@ int main(int argc, char** argv) {
                 << ib << "\n";
         }
     }
-            
-        
 
     std::cerr << "\nRender complete.\n";
     out.close();
