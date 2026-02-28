@@ -394,7 +394,7 @@ This is unbiased but not optimal.
 
 ---
 
-# 2️⃣ Upgrade 1 — Power Heuristic MIS
+# Upgrade 1 — Power Heuristic MIS
 
 ## Problem
 
