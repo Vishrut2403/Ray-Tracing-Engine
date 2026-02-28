@@ -341,3 +341,42 @@ Rendering quality is not about more samples.
 It is about choosing the correct PDF.
 
 Variance reduction comes from matching the sampling distribution to the integrand.
+
+---
+
+## Sphere Light PDF Derivation
+
+Given shading point P and sphere center C with radius R:
+
+Let:
+
+\[
+d = |C - P|
+\]
+
+Maximum visible angle:
+
+\[
+\sin\theta_{max} = \frac{R}{d}
+\]
+
+\[
+\cos\theta_{max} = \sqrt{1 - \frac{R^2}{d^2}}
+\]
+
+The sphere subtends solid angle:
+
+\[
+\Omega = 2\pi(1 - \cos\theta_{max})
+\]
+
+Uniform sampling over this solid angle gives:
+
+\[
+p(\omega) =
+\frac{1}
+{2\pi(1 - \cos\theta_{max})}
+\]
+
+This samples only directions that intersect the sphere,
+reducing variance compared to uniform surface sampling.

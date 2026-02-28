@@ -13,6 +13,7 @@
 #include "bvh.h"
 #include "core/interval.h"
 #include "constant_medium.h"
+#include <sphere.h>
 
 #include "xy_rect.h"
 #include "xz_rect.h"
@@ -129,7 +130,7 @@ int main(int argc, char** argv) {
     const double aspect_ratio = 1.0;
     const int image_width  = 400;
     const int image_height = 400;
-    const int samples_per_pixel = 1000;
+    const int samples_per_pixel = 20;
     const int max_depth = 50;  
 
     std::string filename = "cornell.ppm";
@@ -176,12 +177,15 @@ int main(int argc, char** argv) {
     world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
     world.add(std::make_shared<flip_face>(
         std::make_shared<yz_rect>(0,555,0,555,0, red)));
+        auto sphere_light =
+    std::make_shared<sphere>(
+        point3(278, 540, 278),   // near ceiling center
+        30,                      // small radius
+        light
+    );
 
-    auto ceiling_light =
-        std::make_shared<xz_rect>(213,343,227,332,554, light);
-
-    world.add(std::make_shared<flip_face>(ceiling_light));
-    lights.add(ceiling_light);
+    world.add(sphere_light);
+    lights.add(sphere_light);
 
     world.add(std::make_shared<xz_rect>(0,555,0,555,0, white));
     world.add(std::make_shared<flip_face>(
@@ -200,11 +204,11 @@ int main(int argc, char** argv) {
 
     world.add(box1);
 
-    world.add(std::make_shared<constant_medium>(
-        box1,
-        0.01,
-        color(0,0,0)
-    ));
+    // world.add(std::make_shared<constant_medium>(
+    //     box1,
+    //     0.01,
+    //     color(0,0,0)
+    // ));
 
     std::shared_ptr<hittable> box2 =
         std::make_shared<box>(

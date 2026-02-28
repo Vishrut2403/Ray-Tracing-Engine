@@ -3,6 +3,7 @@
 
 #include "hittable.h"
 #include "rtweekend.h"
+#include "onb.h"
 #include <memory>
 
 inline void get_sphere_uv(
@@ -11,7 +12,7 @@ inline void get_sphere_uv(
     double& v
 ) {
     auto theta = acos(-p.y());
-    auto phi = atan2(-p.z(), p.x()) + pi;
+    auto phi   = atan2(-p.z(), p.x()) + pi;
 
     u = phi / (2*pi);
     v = theta / pi;
@@ -24,6 +25,7 @@ public:
     sphere(point3 cen, double r, std::shared_ptr<material> m)
         : center(cen), radius(r), mat_ptr(m) {}
 
+    // HIT
     virtual bool hit(
         const ray& r,
         const interval& ray_t,
@@ -61,6 +63,7 @@ public:
         return true;
     }
 
+    // BOUNDING BOX
     virtual bool bounding_box(
         double time0,
         double time1,
@@ -73,6 +76,46 @@ public:
         );
 
         return true;
+    }
+
+    // SOLID-ANGLE PDF
+    virtual double pdf_value(
+        const point3& origin,
+        const vec3& direction
+    ) const override {
+
+        hit_record rec;
+
+        if (!this->hit(ray(origin, direction),
+                    interval(0.001, infinity),
+                    rec))
+            return 0;
+
+        auto distance_squared =
+            rec.t * rec.t *
+            direction.length_squared();
+
+        auto cosine =
+            fabs(dot(direction, rec.normal)
+                / direction.length());
+
+        auto area =
+            4 * pi * radius * radius;
+
+        return distance_squared /
+            (cosine * area);
+    }
+
+    // SOLID-ANGLE SAMPLING
+    virtual vec3 random(
+        const point3& origin
+    ) const override {
+
+        // Uniform point on sphere surface
+        point3 random_point =
+            center + radius * random_unit_vector();
+
+        return random_point - origin;
     }
 
 public:
