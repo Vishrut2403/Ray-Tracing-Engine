@@ -5,11 +5,9 @@
 #include <limits>
 #include <memory>
 #include <cstdlib>
-#include "random.h"
-
-
-#include "ray.h"
 #include "vec3.h"
+#include "ray.h"
+#include "random.h"
 
 using std::shared_ptr;
 using std::make_shared;

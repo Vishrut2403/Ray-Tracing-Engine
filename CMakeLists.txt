@@ -10,7 +10,10 @@ file(GLOB_RECURSE SRC_FILES src/*.cpp)
 
 
 
-add_executable(render ${SRC_FILES})
+add_executable(render ${SRC_FILES}
+               src/app/main.cpp
+               src/integrator/path_integrator.cpp
+               src/renderer/renderer.cpp)
 
 # Add all header directories
 target_include_directories(render PRIVATE
@@ -22,6 +25,9 @@ target_include_directories(render PRIVATE
     src/acceleration
     src/external
     src/pdfs
+    src/app
+    src/integrator
+    src/renderer
 )
 
 find_package(OpenMP REQUIRED)
