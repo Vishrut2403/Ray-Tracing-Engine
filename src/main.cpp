@@ -61,16 +61,14 @@ color ray_color(
                );
     }
 
-    if (depth < 5) {
-        // Always survive early bounces
-    } else {
-            double max_component =
-                std::max({ srec.attenuation.x(),
-                    srec.attenuation.y(),
-                    srec.attenuation.z() });
+    if (depth >= 5) {
 
-            double survival_prob =
-                std::min(0.95, max_component);
+        double luminance =
+            0.2126 * srec.attenuation.x() +
+            0.7152 * srec.attenuation.y() +
+            0.0722 * srec.attenuation.z();
+
+        double survival_prob = std::min(0.95, luminance);
 
         if (random_double() > survival_prob)
             return emitted;
@@ -78,7 +76,6 @@ color ray_color(
         srec.attenuation /= survival_prob;
     }
 
-    // Light sampling (MIS)
     auto light_pdf =
         make_shared<hittable_pdf>(lights, rec.p);
 
@@ -112,28 +109,25 @@ color ray_color(
            ) / pdf_val;
 }
 
-
 int main(int argc, char** argv) {
 
     std::cout << "Max Threads: "
-              << omp_get_max_threads()
-              << "\n";
+              << omp_get_max_threads() << "\n";
 
     #pragma omp parallel
     {
         #pragma omp single
         std::cout << "Threads in parallel region: "
-                  << omp_get_num_threads()
-                  << "\n";
+                  << omp_get_num_threads() << "\n";
     }
 
     const double aspect_ratio = 1.0;
-    const int image_width  = 400;
-    const int image_height = 400;
-    const int samples_per_pixel = 20;
-    const int max_depth = 50;  
+    const int image_width  = 600;
+    const int image_height = 600;
+    const int samples_per_pixel = 800;
+    const int max_depth = 40;
 
-    std::string filename = "cornell.ppm";
+    std::string filename = "cornell_volume_box2.ppm";
 
     if (argc > 1) {
         filename = argv[1];
@@ -144,7 +138,6 @@ int main(int argc, char** argv) {
     }
 
     namespace fs = std::filesystem;
-
     fs::path build_dir = fs::current_path();
     fs::path project_root = build_dir.parent_path();
     fs::path render_dir =
@@ -155,8 +148,7 @@ int main(int argc, char** argv) {
 
     std::ofstream out(filepath);
     if (!out) {
-        std::cerr << "Error: Could not open file: "
-                  << filepath << "\n";
+        std::cerr << "Error: Could not open file\n";
         return 1;
     }
 
@@ -164,25 +156,24 @@ int main(int argc, char** argv) {
         << image_width << " "
         << image_height << "\n255\n";
 
-    // Scene: Cornell Box with Participating Media
-
     hittable_list world;
     hittable_list lights;
 
     auto red   = std::make_shared<lambertian>(color(.65, .05, .05));
     auto white = std::make_shared<lambertian>(color(.73, .73, .73));
     auto green = std::make_shared<lambertian>(color(.12, .45, .15));
-    auto light = std::make_shared<diffuse_light>(color(15, 15, 15));
+    auto light = std::make_shared<diffuse_light>(color(20, 20, 20));
 
     world.add(std::make_shared<yz_rect>(0,555,0,555,555, green));
     world.add(std::make_shared<flip_face>(
         std::make_shared<yz_rect>(0,555,0,555,0, red)));
-        auto sphere_light =
-    std::make_shared<sphere>(
-        point3(278, 540, 278),   // near ceiling center
-        30,                      // small radius
-        light
-    );
+
+    auto sphere_light =
+        std::make_shared<sphere>(
+            point3(278, 540, 278),
+            30,
+            light
+        );
 
     world.add(sphere_light);
     lights.add(sphere_light);
@@ -204,11 +195,11 @@ int main(int argc, char** argv) {
 
     world.add(box1);
 
-    // world.add(std::make_shared<constant_medium>(
-    //     box1,
-    //     0.01,
-    //     color(0,0,0)
-    // ));
+    world.add(std::make_shared<constant_medium>(
+        box1,
+        0.08,
+        color(0,0,0)
+    ));
 
     std::shared_ptr<hittable> box2 =
         std::make_shared<box>(
@@ -219,11 +210,13 @@ int main(int argc, char** argv) {
     box2 = std::make_shared<rotate_y>(box2, -18);
     box2 = std::make_shared<translate>(box2, vec3(130,0,65));
 
-    world.add(std::make_shared<constant_medium>(
-        box2,
-        0.01,
-        color(1,1,1)
-    ));
+    world.add(box2);
+
+    // world.add(std::make_shared<constant_medium>(
+    //     box2,
+    //     0.1,
+    //     color(1,1,1)
+    // ));
 
     world = hittable_list(
         std::make_shared<bvh_node>(
@@ -298,7 +291,6 @@ int main(int argc, char** argv) {
 
     std::cerr << "\nRendering finished.\n";
 
-
     for (int j = image_height - 1; j >= 0; --j) {
         for (int i = 0; i < image_width; ++i) {
 
@@ -321,7 +313,7 @@ int main(int argc, char** argv) {
         }
     }
 
-    std::cerr << "\nRender complete.\n";
+    std::cerr << "Render complete.\n";
     out.close();
 
     std::cout << "Saved to: "

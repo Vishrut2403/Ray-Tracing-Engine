@@ -380,3 +380,49 @@ p(\omega) =
 
 This samples only directions that intersect the sphere,
 reducing variance compared to uniform surface sampling.
+
+---
+
+
+Final estimator:
+
+\[
+L = \frac{f(x) \cdot L_i \cdot \cos\theta}{p_{\text{mixed}}}
+\]
+
+This is unbiased but not optimal.
+
+---
+
+# 2️⃣ Upgrade 1 — Power Heuristic MIS
+
+## Problem
+
+Equal-weight mixture can still produce:
+
+- Fireflies
+- High variance near sharp lights
+- Instability in volumetrics
+
+## Solution
+
+Use the **Power Heuristic**:
+
+\[
+w_i = \frac{(n_i p_i)^2}{\sum_j (n_j p_j)^2}
+\]
+
+Since we use 1 sample per technique:
+
+\[
+w_i = \frac{p_i^2}{p_1^2 + p_2^2}
+\]
+
+---
+
+## Implementation Strategy
+
+Instead of only using:
+
+```cpp
+mixture_pdf
