@@ -37,7 +37,7 @@ int main(int argc, char** argv)
 
     // Keep preview alive until user closes it
     while (!preview.should_close())
-    {
+    {   
         preview.poll_events();
 
         {
