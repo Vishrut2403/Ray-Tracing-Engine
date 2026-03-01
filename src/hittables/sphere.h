@@ -25,7 +25,9 @@ public:
     sphere(point3 cen, double r, std::shared_ptr<material> m)
         : center(cen), radius(r), mat_ptr(m) {}
 
+    // ----------------------------------------------------
     // HIT
+    // ----------------------------------------------------
     virtual bool hit(
         const ray& r,
         const interval& ray_t,
@@ -63,7 +65,9 @@ public:
         return true;
     }
 
+    // ----------------------------------------------------
     // BOUNDING BOX
+    // ----------------------------------------------------
     virtual bool bounding_box(
         double time0,
         double time1,
@@ -78,7 +82,9 @@ public:
         return true;
     }
 
-    // SOLID-ANGLE PDF
+    // ----------------------------------------------------
+    // SOLID ANGLE PDF
+    // ----------------------------------------------------
     virtual double pdf_value(
         const point3& origin,
         const vec3& direction
@@ -87,35 +93,68 @@ public:
         hit_record rec;
 
         if (!this->hit(ray(origin, direction),
-                    interval(0.001, infinity),
-                    rec))
-            return 0;
+                       interval(0.001, infinity),
+                       rec))
+            return 0.0;
 
-        auto distance_squared =
-            rec.t * rec.t *
-            direction.length_squared();
+        vec3 to_center = center - origin;
+        double distance_squared = to_center.length_squared();
+        double radius_squared   = radius * radius;
 
-        auto cosine =
-            fabs(dot(direction, rec.normal)
-                / direction.length());
+        // If shading point is inside sphere
+        if (distance_squared <= radius_squared)
+            return 1.0 / (4.0 * pi);
 
-        auto area =
-            4 * pi * radius * radius;
+        double cos_theta_max =
+            sqrt(1.0 - radius_squared / distance_squared);
 
-        return distance_squared /
-            (cosine * area);
+        double solid_angle =
+            2.0 * pi * (1.0 - cos_theta_max);
+
+        return 1.0 / solid_angle;
     }
 
-    // SOLID-ANGLE SAMPLING
+    // ----------------------------------------------------
+    // SOLID ANGLE SAMPLING
+    // ----------------------------------------------------
     virtual vec3 random(
         const point3& origin
     ) const override {
 
-        // Uniform point on sphere surface
-        point3 random_point =
-            center + radius * random_unit_vector();
+        vec3 direction = center - origin;
+        double distance_squared = direction.length_squared();
+        double radius_squared   = radius * radius;
 
-        return random_point - origin;
+        // Build orthonormal basis toward sphere
+        onb uvw;
+        uvw.build_from_w(direction);
+
+        // If inside sphere, fallback to uniform sphere sampling
+        if (distance_squared <= radius_squared) {
+            return random_unit_vector();
+        }
+
+        double cos_theta_max =
+            sqrt(1.0 - radius_squared / distance_squared);
+
+        double r1 = random_double();
+        double r2 = random_double();
+
+        double cos_theta =
+            1.0 - r2 * (1.0 - cos_theta_max);
+
+        double sin_theta =
+            sqrt(1.0 - cos_theta * cos_theta);
+
+        double phi = 2.0 * pi * r1;
+
+        vec3 local_dir(
+            cos(phi) * sin_theta,
+            sin(phi) * sin_theta,
+            cos_theta
+        );
+
+        return uvw.local(local_dir);
     }
 
 public:

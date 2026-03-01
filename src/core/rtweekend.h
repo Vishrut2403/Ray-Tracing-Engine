@@ -1,15 +1,14 @@
 #ifndef RTWEEKEND_H
 #define RTWEEKEND_H
 
+#include "ray.h"
+#include "vec3.h"
+
 #include <cmath>
 #include <limits>
 #include <memory>
 #include <cstdlib>
 #include "random.h"
-
-
-#include "ray.h"
-#include "vec3.h"
 
 using std::shared_ptr;
 using std::make_shared;

@@ -1,11 +1,10 @@
 #ifndef RANDOM_H
 #define RANDOM_H
-
-#include <cstdlib>
-#include <cmath>
-
-#include "vec3.h"
 #pragma once
+
+#include <cmath>
+#include <cstdlib>
+#include "vec3.h"
 
 #include <random>
 

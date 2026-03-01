@@ -4,7 +4,6 @@
 #include <cmath>
 #include <iostream>
 #include <cstdlib>
-#include "random.h"
 
 class vec3 {
 public:
