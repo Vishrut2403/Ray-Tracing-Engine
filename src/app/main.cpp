@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
     fs::path build_dir = fs::current_path();
     fs::path project_root = build_dir.parent_path();
     fs::path render_dir =
-        project_root / "Ray-Tracing-Engine" / "renders" / "book3";
+        project_root / "Ray-Tracing-Engine" / "renders" / "wavefront";
 
     fs::create_directories(render_dir);
     fs::path filepath = render_dir / filename;

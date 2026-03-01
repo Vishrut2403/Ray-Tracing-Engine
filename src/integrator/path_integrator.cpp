@@ -1,5 +1,4 @@
 #include "path_integrator.h"
-
 #include "rtweekend.h"
 #include "material.h"
 #include "hittable_pdf.h"
@@ -10,81 +9,75 @@ color PathIntegrator::Li(
     const color& background,
     const hittable& world,
     const std::shared_ptr<hittable>& lights,
-    int depth
+    int max_depth
 ) const
 {
-    hit_record rec;
+    ray current_ray = r;
+    color L(0,0,0);
+    color beta(1,1,1);
 
-    if (depth <= 0)
-        return color(0,0,0);
+    for (int depth = 0; depth < max_depth; ++depth) {
 
-    if (!world.hit(r, interval(0.001, infinity), rec))
-        return background;
+        hit_record rec;
 
-    color emitted =
-        rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
+        if (!world.hit(current_ray, interval(0.001, infinity), rec)) {
+            L += beta * background;
+            break;
+        }
 
-    scatter_record srec;
+        // Emission
+        L += beta * rec.mat_ptr->emitted(
+                current_ray, rec, rec.u, rec.v, rec.p);
 
-    if (!rec.mat_ptr->scatter(r, rec, srec))
-        return emitted;
+        scatter_record srec;
 
-    if (srec.is_specular) {
-        return emitted +
-               srec.attenuation *
-               Li(
-                   srec.specular_ray,
-                   background,
-                   world,
-                   lights,
-                   depth - 1
-               );
+        if (!rec.mat_ptr->scatter(current_ray, rec, srec))
+            break;
+
+        if (srec.is_specular) {
+            beta *= srec.attenuation;
+            current_ray = srec.specular_ray;
+            continue;
+        }
+
+        // Russian roulette
+        if (depth >= 5) {
+            double luminance =
+                0.2126 * beta.x() +
+                0.7152 * beta.y() +
+                0.0722 * beta.z();
+
+            double survival_prob = std::min(0.95, luminance);
+
+            if (random_double() > survival_prob)
+                break;
+
+            beta /= survival_prob;
+        }
+
+        // ⚠ TEMP: still using shared_ptr (next step removes it)
+        auto light_pdf =
+            std::make_shared<hittable_pdf>(lights, rec.p);
+
+        mixture_pdf mixed_pdf(light_pdf, srec.pdf_ptr);
+
+        vec3 new_direction = mixed_pdf.generate();
+        double pdf_val = mixed_pdf.value(new_direction);
+
+        if (pdf_val <= 1e-8)
+            break;
+
+        ray scattered(rec.p, new_direction, current_ray.time());
+
+        double scattering_pdf =
+            rec.mat_ptr->scattering_pdf(
+                current_ray, rec, scattered);
+
+        beta *= srec.attenuation *
+                scattering_pdf / pdf_val;
+
+        current_ray = scattered;
     }
 
-    if (depth >= 5) {
-
-        double luminance =
-            0.2126 * srec.attenuation.x() +
-            0.7152 * srec.attenuation.y() +
-            0.0722 * srec.attenuation.z();
-
-        double survival_prob = std::min(0.95, luminance);
-
-        if (random_double() > survival_prob)
-            return emitted;
-
-        srec.attenuation /= survival_prob;
-    }
-
-    auto light_pdf =
-        std::make_shared<hittable_pdf>(lights, rec.p);
-
-    mixture_pdf mixed_pdf(light_pdf, srec.pdf_ptr);
-
-    ray scattered(
-        rec.p,
-        mixed_pdf.generate(),
-        r.time()
-    );
-
-    double pdf_val =
-        mixed_pdf.value(scattered.direction());
-
-    if (pdf_val <= 1e-8)
-        return emitted;
-
-    double scattering_pdf =
-        rec.mat_ptr->scattering_pdf(
-            r, rec, scattered);
-
-    return emitted +
-           srec.attenuation *
-           scattering_pdf *
-           Li(
-               scattered,
-               background,
-               world,
-               lights,
-               depth - 1
-           ) / pdf_val;
+    return L;
 }
