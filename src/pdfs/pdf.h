@@ -1,7 +1,7 @@
 #ifndef PDF_H
 #define PDF_H
 
-#include "vec3.h"
+#include "core/vec3.h"
 
 class pdf {
 public:

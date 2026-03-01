@@ -1,9 +1,10 @@
 #ifndef HITTABLE_H
 #define HITTABLE_H
+
 #include <memory>
-#include "ray.h"
-#include "aabb.h"
-#include "interval.h"
+#include "core/ray.h"
+#include "acceleration/aabb.h"
+#include "core/interval.h"
 
 class material;
 

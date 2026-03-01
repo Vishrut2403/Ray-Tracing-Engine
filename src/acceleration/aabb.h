@@ -1,8 +1,8 @@
 #ifndef AABB_H
 #define AABB_H
 
-#include "rtweekend.h"
-#include "interval.h"
+#include "core/rtweekend.h"
+#include "core/interval.h"
 
 class aabb {
 public:

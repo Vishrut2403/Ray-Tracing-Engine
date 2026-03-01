@@ -2,10 +2,10 @@
 #define CONSTANT_MEDIUM_H
 
 #include "hittable.h"
-#include "material.h"
-#include "isotropic.h"
-#include "interval.h"
-#include "random.h"
+#include "materials/material.h"
+#include "materials/isotropic.h"
+#include "core/interval.h"
+#include "core/random.h"
 
 class constant_medium : public hittable {
 public:

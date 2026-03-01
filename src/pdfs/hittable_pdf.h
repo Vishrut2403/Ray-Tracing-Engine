@@ -2,7 +2,7 @@
 #define HITTABLE_PDF_H
 
 #include "pdf.h"
-#include "hittable.h"
+#include "hittables/hittable.h"
 
 class hittable_pdf : public pdf {
 public:

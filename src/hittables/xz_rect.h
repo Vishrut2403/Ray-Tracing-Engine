@@ -2,7 +2,7 @@
 
 #include <memory>
 #include "hittable.h"
-#include "rtweekend.h"
+#include "core/rtweekend.h"
 
 class xz_rect : public hittable {
 public:

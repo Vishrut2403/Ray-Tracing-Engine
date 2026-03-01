@@ -1,9 +1,9 @@
 #ifndef BVH_H
 #define BVH_H
 
-#include "rtweekend.h"
-#include "hittable.h"
-#include "hittable_list.h"
+#include "core/rtweekend.h"
+#include "hittables/hittable.h"
+#include "hittables/hittable_list.h"
 #include "aabb.h"
 #include <memory>
 #include <algorithm>

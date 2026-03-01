@@ -2,8 +2,8 @@
 #define SPHERE_H
 
 #include "hittable.h"
-#include "rtweekend.h"
-#include "onb.h"
+#include "core/rtweekend.h"
+#include "core/onb.h"
 #include <memory>
 
 inline void get_sphere_uv(

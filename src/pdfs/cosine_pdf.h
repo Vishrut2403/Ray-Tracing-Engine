@@ -2,8 +2,8 @@
 #define COSINE_PDF_H
 
 #include "pdf.h"
-#include "onb.h"
-#include "random.h"
+#include "core/onb.h"
+#include "core/random.h"
 
 class cosine_pdf : public pdf {
 public:

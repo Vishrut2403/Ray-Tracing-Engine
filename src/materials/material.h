@@ -1,14 +1,14 @@
 #ifndef MATERIAL_H
 #define MATERIAL_H
 
-#include "rtweekend.h"
-#include "pdf.h"
-#include "onb.h"
-#include "random.h"
-#include "cosine_pdf.h"
+#include "core/rtweekend.h"
+#include "pdfs/pdf.h"
+#include "core/onb.h"
+#include "core/random.h"
+#include "pdfs/cosine_pdf.h"
 
-#include "hittable.h"
-#include "texture.h"
+#include "hittables/hittable.h"
+#include "textures/texture.h"
 
 struct scatter_record {
     ray specular_ray;

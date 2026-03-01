@@ -1,4 +1,4 @@
-#include "rtweekend.h"
+#include "core/rtweekend.h"
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -6,25 +6,25 @@
 #include <omp.h>
 #include <atomic>
 #include <algorithm>
-#include "hittable_list.h"
-#include "hittable_pdf.h"
-#include "mixture_pdf.h"
-#include "camera.h"
-#include "bvh.h"
+#include "hittables/hittable_list.h"
+#include "pdfs/hittable_pdf.h"
+#include "pdfs/mixture_pdf.h"
+#include "core/camera.h"
+#include "acceleration/bvh.h"
 #include "core/interval.h"
-#include "constant_medium.h"
-#include <sphere.h>
+#include "hittables/constant_medium.h"
+#include <hittables/sphere.h>
 
-#include "xy_rect.h"
-#include "xz_rect.h"
-#include "yz_rect.h"
-#include "flip_face.h"
-#include "box.h"
-#include "translate.h"
-#include "rotate_y.h"
+#include "hittables/xy_rect.h"
+#include "hittables/xz_rect.h"
+#include "hittables/yz_rect.h"
+#include "hittables/flip_face.h"
+#include "hittables/box.h"
+#include "hittables/translate.h"
+#include "hittables/rotate_y.h"
 
-#include "material.h"
-#include "diffuse_light.h"
+#include "materials/material.h"
+#include "materials/diffuse_light.h"
 
 color ray_color(
     const ray& r,
@@ -124,7 +124,7 @@ int main(int argc, char** argv) {
     const double aspect_ratio = 1.0;
     const int image_width  = 600;
     const int image_height = 600;
-    const int samples_per_pixel = 800;
+    const int samples_per_pixel = 400;
     const int max_depth = 40;
 
     std::string filename = "cornell_volume_box2.ppm";

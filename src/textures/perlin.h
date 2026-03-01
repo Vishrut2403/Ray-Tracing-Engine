@@ -1,7 +1,7 @@
 #ifndef PERLIN_H
 #define PERLIN_H
 
-#include "rtweekend.h"
+#include "core/rtweekend.h"
 
 class perlin {
 public:

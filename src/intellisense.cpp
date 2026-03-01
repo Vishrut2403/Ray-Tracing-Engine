@@ -1,0 +1,30 @@
+#include "core/rtweekend.h"
+
+#include "acceleration/aabb.h"
+
+#include "hittables/box.h"
+#include "hittables/constant_medium.h"
+#include "hittables/flip_face.h"
+#include "hittables/hittable.h"
+#include "hittables/hittable_list.h"
+#include "hittables/moving_sphere.h"
+#include "hittables/rotate_y.h"
+#include "hittables/sphere.h"
+#include "hittables/translate.h"
+#include "hittables/xy_rect.h"
+#include "hittables/xz_rect.h"
+#include "hittables/yz_rect.h"
+
+#include "materials/diffuse_light.h"
+#include "materials/isotropic.h"
+#include "materials/material.h"
+
+#include "pdfs/cosine_pdf.h"
+#include "pdfs/hittable_pdf.h"
+#include "pdfs/mixture_pdf.h"
+#include "pdfs/pdf.h"
+#include "pdfs/sphere_pdf.h"
+
+#include "textures/image_texture.h"
+#include "textures/perlin.h"
+#include "textures/texture.h"

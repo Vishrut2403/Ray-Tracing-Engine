@@ -2,8 +2,8 @@
 #define ISOTROPIC_H
 
 #include "material.h"
-#include "random.h"
-#include "sphere_pdf.h"
+#include "core/random.h"
+#include "pdfs/sphere_pdf.h"
 
 class isotropic : public material {
 public:

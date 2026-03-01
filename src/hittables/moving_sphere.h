@@ -2,9 +2,9 @@
 #define MOVING_SPHERE_H
 
 #include <memory>
-#include "rtweekend.h"
-#include "hittable.h"
-#include "material.h"
+#include "core/rtweekend.h"
+#include "hittables/hittable.h"
+#include "materials/material.h"
 
 class moving_sphere : public hittable {
 public:

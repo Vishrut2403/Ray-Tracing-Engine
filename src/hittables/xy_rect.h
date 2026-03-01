@@ -2,8 +2,8 @@
 
 #include <memory>
 #include "hittable.h"
-#include "aabb.h"
-#include "rtweekend.h"
+#include "acceleration/aabb.h"
+#include "core/rtweekend.h"
 
 class xy_rect : public hittable {
 public:

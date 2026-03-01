@@ -3,7 +3,7 @@
 #include <memory>
 #include <cmath>
 #include "hittable.h"
-#include "rtweekend.h"
+#include "core/rtweekend.h"
 
 class rotate_y : public hittable {
 public:

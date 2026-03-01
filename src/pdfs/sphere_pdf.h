@@ -2,8 +2,8 @@
 #define SPHERE_PDF_H
 
 #include "pdf.h"
-#include "random.h"
-#include "rtweekend.h"
+#include "core/random.h"
+#include "core/rtweekend.h"
 
 class sphere_pdf : public pdf {
 public:
