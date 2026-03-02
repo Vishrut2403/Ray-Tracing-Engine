@@ -81,7 +81,7 @@ public:
                 ray(origin, direction),
                 interval(0.001, infinity),
                 rec))
-            return 0;
+            return 0.0;
 
         double area = (y1 - y0) * (z1 - z0);
 
@@ -89,13 +89,17 @@ public:
             rec.t * rec.t *
             direction.length_squared();
 
+        vec3 unit_dir = unit_vector(direction);
+
         double cosine =
-            fabs(dot(direction, rec.normal)
-                 / direction.length());
+            fabs(dot(rec.normal, -unit_dir));
 
-        return distance_squared / (cosine * area);
+        if (cosine < 1e-8)
+            return 0.0;
+
+        return distance_squared /
+            (cosine * area);
     }
-
     virtual vec3 random(
         const point3& origin
     ) const override {

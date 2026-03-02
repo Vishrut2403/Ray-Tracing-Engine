@@ -1,51 +1,45 @@
 #ifndef MATERIAL_H
 #define MATERIAL_H
 
-#include "core/rtweekend.h"
-#include "pdfs/pdf.h"
-#include "core/onb.h"
-#include "core/random.h"
-#include "pdfs/cosine_pdf.h"
+#include <memory>
+#include <cmath>
 
+#include "core/rtweekend.h"
+#include "core/ray.h"
 #include "hittables/hittable.h"
 #include "textures/texture.h"
-
-struct scatter_record {
-    ray specular_ray;
-    bool is_specular;
-    color attenuation;
-    std::shared_ptr<pdf> pdf_ptr;
-};
+#include "materials/bsdf_sample.h"
 
 class material {
 public:
     virtual ~material() = default;
 
     virtual color emitted(
-        const ray& r_in,
-        const hit_record& rec,
-        double u,
-        double v,
-        const point3& p
+        const ray&,
+        const hit_record&,
+        double,
+        double,
+        const point3&
     ) const {
         return color(0,0,0);
     }
 
-    virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        scatter_record& srec
-    ) const {
-        return false;
-    }
+    virtual BSDFSample sample(
+        const ray& wo,
+        const hit_record& rec
+    ) const = 0;
 
-    virtual double scattering_pdf(
-        const ray& r_in,
-        const hit_record& rec,
-        const ray& scattered
-    ) const {
-        return 0;
-    }
+    virtual color f(
+        const ray& wo,
+        const vec3& wi,
+        const hit_record& rec
+    ) const = 0;
+
+    virtual double pdf(
+        const ray& wo,
+        const vec3& wi,
+        const hit_record& rec
+    ) const = 0;
 };
 
 class lambertian : public material {
@@ -58,33 +52,44 @@ public:
     lambertian(std::shared_ptr<texture> a)
         : albedo(a) {}
 
-    virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        scatter_record& srec
+    virtual BSDFSample sample(
+        const ray& wo,
+        const hit_record& rec
     ) const override {
 
-        srec.is_specular = false;
-        srec.attenuation =
-            albedo->value(rec.u, rec.v, rec.p);
+        vec3 wi = random_unit_vector();
+        if (dot(wi, rec.normal) < 0)
+            wi = -wi;
 
-        srec.pdf_ptr =
-            std::make_shared<cosine_pdf>(rec.normal);
+        double cosine = dot(rec.normal, wi);
+        double pdf_val = cosine > 0 ? cosine / pi : 0.0;
 
-        return true;
+        color rho = albedo->value(rec.u, rec.v, rec.p);
+        color f_val = rho / pi;
+
+        return { wi, f_val, pdf_val, false };
     }
 
-    virtual double scattering_pdf(
-        const ray& r_in,
-        const hit_record& rec,
-        const ray& scattered
+    virtual color f(
+        const ray&,
+        const vec3& wi,
+        const hit_record& rec
     ) const override {
 
-        auto cosine =
-            dot(rec.normal,
-                unit_vector(scattered.direction()));
+        if (dot(rec.normal, wi) <= 0)
+            return color(0,0,0);
 
-        return (cosine < 0) ? 0 : cosine / pi;
+        return albedo->value(rec.u, rec.v, rec.p) / pi;
+    }
+
+    virtual double pdf(
+        const ray&,
+        const vec3& wi,
+        const hit_record& rec
+    ) const override {
+
+        double cosine = dot(rec.normal, wi);
+        return (cosine > 0) ? cosine / pi : 0.0;
     }
 };
 
@@ -96,60 +101,60 @@ public:
     metal(const color& a, double f)
         : albedo(a), fuzz(f < 1 ? f : 1) {}
 
-    virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        scatter_record& srec
+    virtual BSDFSample sample(
+        const ray& wo,
+        const hit_record& rec
     ) const override {
 
         vec3 reflected =
-            reflect(unit_vector(r_in.direction()),
-                    rec.normal);
+            reflect(unit_vector(wo.direction()), rec.normal);
 
-        srec.specular_ray = ray(
-            rec.p,
-            reflected + fuzz * random_in_unit_sphere(),
-            r_in.time()
-        );
+        reflected += fuzz * random_in_unit_sphere();
+        reflected = unit_vector(reflected);
 
-        srec.attenuation = albedo;
-        srec.is_specular = true;
-        srec.pdf_ptr = nullptr;
+        return { reflected, albedo, 1.0, true };
+    }
 
-        return (dot(srec.specular_ray.direction(),
-                    rec.normal) > 0);
+    virtual color f(
+        const ray&,
+        const vec3&,
+        const hit_record&
+    ) const override {
+        return color(0,0,0);
+    }
+
+    virtual double pdf(
+        const ray&,
+        const vec3&,
+        const hit_record&
+    ) const override {
+        return 0.0; 
     }
 };
 
 class dielectric : public material {
 public:
-    double ir;
+    double ir; 
 
     dielectric(double index_of_refraction)
         : ir(index_of_refraction) {}
 
-    virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        scatter_record& srec
+    virtual BSDFSample sample(
+        const ray& wo,
+        const hit_record& rec
     ) const override {
 
-        srec.is_specular = true;
-        srec.pdf_ptr = nullptr;
-        srec.attenuation = color(1.0, 1.0, 1.0);
+        vec3 unit_direction =
+            unit_vector(wo.direction());
 
         double refraction_ratio =
             rec.front_face ? (1.0 / ir) : ir;
 
-        vec3 unit_direction =
-            unit_vector(r_in.direction());
-
         double cos_theta =
-            fmin(dot(-unit_direction,
-                     rec.normal), 1.0);
+            fmin(dot(-unit_direction, rec.normal), 1.0);
 
         double sin_theta =
-            sqrt(1.0 - cos_theta*cos_theta);
+            std::sqrt(1.0 - cos_theta*cos_theta);
 
         bool cannot_refract =
             refraction_ratio * sin_theta > 1.0;
@@ -157,12 +162,11 @@ public:
         vec3 direction;
 
         if (cannot_refract ||
-            reflectance(cos_theta,
-                        refraction_ratio) > random_double()) {
+            reflectance(cos_theta, refraction_ratio)
+                > random_double()) {
 
             direction =
-                reflect(unit_direction,
-                        rec.normal);
+                reflect(unit_direction, rec.normal);
         } else {
 
             direction =
@@ -171,10 +175,23 @@ public:
                         refraction_ratio);
         }
 
-        srec.specular_ray =
-            ray(rec.p, direction, r_in.time());
+        return { direction, color(1,1,1), 1.0, true };
+    }
 
-        return true;
+    virtual color f(
+        const ray&,
+        const vec3&,
+        const hit_record&
+    ) const override {
+        return color(0,0,0); 
+    }
+
+    virtual double pdf(
+        const ray&,
+        const vec3&,
+        const hit_record&
+    ) const override {
+        return 0.0; 
     }
 
 private:
@@ -182,12 +199,10 @@ private:
         double cosine,
         double ref_idx
     ) {
-        auto r0 = (1 - ref_idx) /
-                  (1 + ref_idx);
+        auto r0 = (1 - ref_idx) / (1 + ref_idx);
         r0 = r0*r0;
-        return r0 +
-               (1 - r0) *
-               pow((1 - cosine), 5);
+        return r0 + (1 - r0) *
+               std::pow((1 - cosine), 5);
     }
 };
 

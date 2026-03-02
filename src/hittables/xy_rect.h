@@ -80,7 +80,7 @@ public:
                 ray(origin, direction),
                 interval(0.001, infinity),
                 rec))
-            return 0;
+            return 0.0;
 
         double area = (x1 - x0) * (y1 - y0);
 
@@ -88,11 +88,16 @@ public:
             rec.t * rec.t *
             direction.length_squared();
 
-        double cosine =
-            fabs(dot(direction, rec.normal)
-                 / direction.length());
+        vec3 unit_dir = unit_vector(direction);
 
-        return distance_squared / (cosine * area);
+        double cosine =
+            fabs(dot(rec.normal, -unit_dir));
+
+        if (cosine < 1e-8)
+            return 0.0;
+
+        return distance_squared /
+            (cosine * area);
     }
 
     virtual vec3 random(

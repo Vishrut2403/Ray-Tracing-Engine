@@ -1,9 +1,8 @@
 #ifndef ISOTROPIC_H
 #define ISOTROPIC_H
 
-#include "material.h"
+#include "materials/material.h"
 #include "core/random.h"
-#include "pdfs/sphere_pdf.h"
 
 class isotropic : public material {
 public:
@@ -15,29 +14,37 @@ public:
     isotropic(std::shared_ptr<texture> a)
         : albedo(a) {}
 
-    virtual bool scatter(
-        const ray& r_in,
-        const hit_record& rec,
-        scatter_record& srec
+    virtual BSDFSample sample(
+        const ray&,
+        const hit_record& rec
     ) const override {
 
-        srec.is_specular = false;
-        srec.attenuation = albedo->value(rec.u, rec.v, rec.p);
+        vec3 wi = random_unit_vector();
 
-        // uniform sphere sampling
-        srec.is_specular = false;
-        srec.attenuation = albedo->value(rec.u, rec.v, rec.p);
-        srec.pdf_ptr = std::make_shared<sphere_pdf>();
-        return true;
+        color rho = albedo->value(rec.u, rec.v, rec.p);
 
-        return true;
+        color f_val = rho / (4 * pi);
+        double pdf_val = 1.0 / (4 * pi);
+
+        return { wi, f_val, pdf_val, false };
     }
 
-    virtual double scattering_pdf(
-        const ray& r_in,
-        const hit_record& rec,
-        const ray& scattered
+    virtual color f(
+        const ray&,
+        const vec3&,
+        const hit_record& rec
     ) const override {
+
+        return albedo->value(rec.u, rec.v, rec.p)
+               / (4 * pi);
+    }
+
+    virtual double pdf(
+        const ray&,
+        const vec3&,
+        const hit_record&
+    ) const override {
+
         return 1.0 / (4 * pi);
     }
 };
