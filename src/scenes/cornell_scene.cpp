@@ -24,7 +24,7 @@ Scene build_cornell_volume_scene()
     auto red   = std::make_shared<lambertian>(color(.65, .05, .05));
     auto white = std::make_shared<lambertian>(color(.73, .73, .73));
     auto green = std::make_shared<lambertian>(color(.12, .45, .15));
-    auto light = std::make_shared<diffuse_light>(color(20,20,20));
+    auto light = std::make_shared<diffuse_light>(color(60, 60, 60));
 
     // Left wall (green)
     world_objects.add(
@@ -57,7 +57,7 @@ Scene build_cornell_volume_scene()
         )
     );
 
-    auto raw_light =
+    auto ceiling_light =
         std::make_shared<xz_rect>(
             213, 343,
             227, 332,
@@ -65,13 +65,12 @@ Scene build_cornell_volume_scene()
             light
         );
 
-    auto ceiling_light =
-        std::make_shared<flip_face>(raw_light);
+    world_objects.add(
+        std::make_shared<flip_face>(ceiling_light)
+    );
 
-    world_objects.add(ceiling_light);
-
-    // Add the RAW rect to the lights list
-    lights->add(raw_light);
+    // Add the SAME geometry (same orientation) to lights
+    lights->add(ceiling_light);
 
     // Tall box
     std::shared_ptr<hittable> box1 =

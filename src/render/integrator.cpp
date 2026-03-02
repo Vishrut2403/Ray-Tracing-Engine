@@ -1,5 +1,6 @@
 #include "render/integrator.h"
 #include "materials/material.h"
+#include <algorithm>
 
 static inline double power_heuristic(double pdf_a, double pdf_b)
 {
@@ -126,6 +127,19 @@ color Li(
             specular_bounce = false;
         }
 
+        if (depth >= 3) {
+
+            double max_comp = beta.max_component();
+
+            double survival_prob = std::clamp(max_comp, 0.05, 0.95);
+
+            if (random_double() > survival_prob)
+                break;
+
+            beta /= survival_prob;
+        }
+
+        // Spawn next ray
         r = ray(rec.p, bs.wi, r.time());
     }
 
