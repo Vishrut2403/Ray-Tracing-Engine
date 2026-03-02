@@ -35,8 +35,31 @@ color Li(
         color emitted =
             rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
 
-        if (specular_bounce || depth == 0)
-            L += beta * emitted;
+            if (emitted.length_squared() > 0.0) {
+
+                if (specular_bounce) {
+
+                    L += beta * emitted;
+
+                } else {
+
+                    vec3 wi = r.direction();
+
+                    double bsdf_pdf =
+                        rec.mat_ptr->pdf(r, wi, rec);
+
+                    double light_pdf = 0.0;
+
+                    if (lights && !lights->objects.empty()) {
+                        light_pdf = lights->pdf_value(rec.p, wi);
+                    }
+
+                    double weight =
+                        power_heuristic(bsdf_pdf, light_pdf);
+
+                    L += beta * emitted * weight;
+                }
+            }
 
         if (!specular_bounce &&
             lights &&
@@ -139,7 +162,6 @@ color Li(
             beta /= survival_prob;
         }
 
-        // Spawn next ray
         r = ray(rec.p, bs.wi, r.time());
     }
 
