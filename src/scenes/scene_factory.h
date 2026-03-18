@@ -1,5 +1,6 @@
 #pragma once
 #include "scenes/cornell_scene.h"
+#include "scenes/furnace_scene.h"
 
 class SceneFactory {
 public:
@@ -7,7 +8,10 @@ public:
         if (name == "cornell")
             return build_cornell_volume_scene();
 
-        std::cerr << "Unknown scene. Using cornell.\n";
+        if (name == "furnace")
+            return build_furnace_scene();
+
+        std::cerr << "Unknown scene '" << name << "'. Using cornell.\n";
         return build_cornell_volume_scene();
     }
 };
