@@ -1,5 +1,4 @@
 #pragma once
-
 #include <GLFW/glfw3.h>
 
 class PreviewWindow {
@@ -8,17 +7,13 @@ public:
     ~PreviewWindow();
 
     bool should_close() const;
-    void update(const float* framebuffer_data, float invSamples);
     void poll_events();
+    void update(const float* framebuffer_data, float = 1.0f);
 
 private:
-    int width;
-    int height;
-    unsigned int vao;
-    unsigned int vbo;
+    int width, height;
+    unsigned int vao, vbo;
     unsigned int shader_program;
-    int inv_samples_loc;
-
-    GLFWwindow* window;
+    GLFWwindow*  window;
     unsigned int texture;
 };

@@ -6,26 +6,34 @@
 class Framebuffer {
 public:
     Framebuffer(int w, int h)
-        : width(w), height(h), pixels(w * h, color(0,0,0)) {}
+        : width(w), height(h), pixels(w * h * 3, 0.0f) {}
 
     void set(int x, int y, const color& c) {
-        pixels[y * width + x] = c;
+        int base = (y * width + x) * 3;
+        pixels[base + 0] = static_cast<float>(c.x());
+        pixels[base + 1] = static_cast<float>(c.y());
+        pixels[base + 2] = static_cast<float>(c.z());
     }
 
-    const color& get(int x, int y) const {
-        return pixels[y * width + x];
+    color get(int x, int y) const {
+        int base = (y * width + x) * 3;
+        return color(
+            static_cast<double>(pixels[base + 0]),
+            static_cast<double>(pixels[base + 1]),
+            static_cast<double>(pixels[base + 2])
+        );
     }
 
     const float* raw_data() const {
-        return reinterpret_cast<const float*>(pixels.data());
+        return pixels.data();
     }
 
-    int get_width() const { return width; }
+    int get_width()  const { return width;  }
     int get_height() const { return height; }
 
-    mutable std::mutex mtx;   // ← ADD THIS BACK
+    mutable std::mutex mtx;
 
 private:
     int width, height;
-    std::vector<color> pixels;
+    std::vector<float> pixels; 
 };

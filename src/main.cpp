@@ -15,8 +15,11 @@ int main(int argc, char** argv)
 {
     RenderConfig config = parse_cli(argc, argv);
 
+    if (config.feature == "furnace")
+        apply_furnace_preset(config);
+
     Scene scene = SceneFactory::build(config.feature);
-    camera cam = CameraFactory::build(config);
+    camera cam  = CameraFactory::build(config);
 
     Framebuffer fb(config.width, config.height);
 
@@ -35,9 +38,8 @@ int main(int argc, char** argv)
         render_done = true;
     });
 
-    // Keep preview alive until user closes it
     while (!preview.should_close())
-    {   
+    {
         preview.poll_events();
 
         {
@@ -48,7 +50,6 @@ int main(int argc, char** argv)
 
     render_thread.join();
 
-    // Write final image after window closes
     ImageWriter::write_ppm(
         config.output_path,
         fb,
