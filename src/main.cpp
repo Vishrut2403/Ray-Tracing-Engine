@@ -11,12 +11,16 @@
 #include <atomic>
 #include <mutex>
 
+void run_cuda_smoke_test();
+
 int main(int argc, char** argv)
 {
     RenderConfig config = parse_cli(argc, argv);
 
     if (config.feature == "furnace")
         apply_furnace_preset(config);
+
+    run_cuda_smoke_test();
 
     Scene scene = SceneFactory::build(config.feature);
     camera cam  = CameraFactory::build(config);
