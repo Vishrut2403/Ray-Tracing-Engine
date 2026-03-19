@@ -1,0 +1,163 @@
+#include "cuda/cuda_renderer.h"
+#include "cuda/gpu_integrator.cuh"
+#include "cuda/scene_uploader.h"
+#include "cuda/cuda_rand.cuh"
+#include "render/framebuffer.h"
+#include "core/camera.h"
+#include "scenes/cornell_scene.h"
+
+#include <cstdio>
+#include <mutex>
+
+static GpuCamera make_gpu_camera(const camera& cam) {
+    GpuCamera gc;
+    gc.origin      = cam.get_origin();
+    gc.lower_left  = cam.get_lower_left();
+    gc.horizontal  = cam.get_horizontal();
+    gc.vertical    = cam.get_vertical();
+    gc.u           = cam.get_u();
+    gc.v           = cam.get_v();
+    gc.lens_radius = cam.get_lens_radius();
+    return gc;
+}
+
+__global__ void accumulate_kernel(
+    float*              d_accum,
+    int                 width,
+    int                 height,
+    int                 batch_spp,
+    GpuCamera           cam,
+    vec3                background,
+    const GpuHittable*  hittables,
+    int                 n_hittables,
+    const GpuMaterial*  materials,
+    const int*          light_ids,
+    int                 n_lights,
+    int                 max_depth,
+    curandState*        rand_states
+) {
+    int x = blockIdx.x * blockDim.x + threadIdx.x;
+    int y = blockIdx.y * blockDim.y + threadIdx.y;
+    if (x >= width || y >= height) return;
+
+    int         id  = y * width + x;
+    curandState rng = rand_states[id];
+
+    vec3 pixel(0,0,0);
+    for (int s = 0; s < batch_spp; ++s) {
+        double u = (x + rand_double(&rng)) / (width  - 1);
+        double v = (y + rand_double(&rng)) / (height - 1);
+        ray r    = gpu_get_ray(cam, u, v, &rng);
+        pixel    = pixel + gpu_Li(r, background,
+                                   hittables, n_hittables, materials,
+                                   light_ids, n_lights, max_depth, &rng);
+    }
+
+    d_accum[id*3 + 0] += (float)pixel.x();
+    d_accum[id*3 + 1] += (float)pixel.y();
+    d_accum[id*3 + 2] += (float)pixel.z();
+
+    rand_states[id] = rng;
+}
+
+void cuda_render(const Scene& scene,
+                 Framebuffer& fb,
+                 const camera& cam,
+                 const color& background,
+                 int spp,
+                 int max_depth,
+                 PreviewWindow* preview) {
+
+    const int W = fb.get_width();
+    const int H = fb.get_height();
+    const int N = W * H;
+
+    GpuScene gpu_scene = SceneUploader::build_and_upload();
+
+    cudaStream_t stream;
+    cudaStreamCreate(&stream);
+
+    curandState* d_states;
+    cudaMalloc(&d_states, N * sizeof(curandState));
+    {
+        int t = 128, b = (N + t - 1) / t;
+        cuda_rand_init<<<b, t, 0, stream>>>(d_states, 1234ULL, N);
+        cudaStreamSynchronize(stream);
+    }
+
+    float* d_accum;
+    cudaMalloc(&d_accum, N * 3 * sizeof(float));
+    cudaMemsetAsync(d_accum, 0, N * 3 * sizeof(float), stream);
+
+    float* h_accum;
+    cudaMallocHost(&h_accum, N * 3 * sizeof(float));
+
+    GpuCamera gpu_cam = make_gpu_camera(cam);
+    dim3 threads(16, 16);
+    dim3 blocks((W + 15) / 16, (H + 15) / 16);
+
+    const int BATCH          = 32;
+    const int PREVIEW_EVERY  = 4;
+
+    int samples_done  = 0;
+    int batch_count   = 0;
+
+    printf("[CUDA] %dx%d  spp=%d  depth=%d  batch=%d  preview_every=%d\n",
+           W, H, spp, max_depth, BATCH, PREVIEW_EVERY);
+
+    while (samples_done < spp) {
+        int batch = (samples_done + BATCH <= spp) ? BATCH : (spp - samples_done);
+
+        accumulate_kernel<<<blocks, threads, 0, stream>>>(
+            d_accum, W, H, batch,
+            gpu_cam, background,
+            gpu_scene.d_hittables, gpu_scene.n_hittables,
+            gpu_scene.d_materials,
+            gpu_scene.d_light_ids, gpu_scene.n_lights,
+            max_depth, d_states
+        );
+
+        samples_done += batch;
+        ++batch_count;
+
+        bool do_preview = preview &&
+                          (batch_count % PREVIEW_EVERY == 0 || samples_done == spp);
+
+        if (do_preview) {
+            cudaMemcpyAsync(h_accum, d_accum, N * 3 * sizeof(float),
+                            cudaMemcpyDeviceToHost, stream);
+            cudaStreamSynchronize(stream);
+
+            {
+                std::lock_guard<std::mutex> lock(fb.mtx);
+                fb.set_bulk(h_accum, 1.0f / samples_done);
+            }
+            preview->poll_events();
+            {
+                std::lock_guard<std::mutex> lock(fb.mtx);
+                preview->update(fb.raw_data(), 1.0f);
+            }
+        } else {
+            cudaStreamSynchronize(stream);
+        }
+
+        printf("\r[CUDA] %d / %d spp", samples_done, spp);
+        fflush(stdout);
+    }
+    
+    cudaMemcpyAsync(h_accum, d_accum, N * 3 * sizeof(float),
+                    cudaMemcpyDeviceToHost, stream);
+    cudaStreamSynchronize(stream);
+    {
+        std::lock_guard<std::mutex> lock(fb.mtx);
+        fb.set_bulk(h_accum, 1.0f / spp);
+    }
+
+    printf("\n[CUDA] done\n");
+
+    cudaFreeHost(h_accum);
+    cudaFree(d_accum);
+    cudaFree(d_states);
+    cudaStreamDestroy(stream);
+    gpu_scene.free_device();
+}

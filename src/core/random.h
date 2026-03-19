@@ -2,12 +2,12 @@
 #define RANDOM_H
 #pragma once
 
+// CPU random functions — GPU will use cuRAND (see cuda/cuda_rand.cuh)
+// None of these are marked HD because std::mt19937 is not available on device.
+
 #include <cmath>
-#include <cstdlib>
-#include "vec3.h"
-
 #include <random>
-
+#include "vec3.h"
 
 inline double random_double() {
     thread_local static std::mt19937 generator(std::random_device{}());
@@ -24,56 +24,34 @@ inline int random_int(int min, int max) {
 }
 
 inline vec3 random_vec3() {
-    return vec3(random_double(),
-                random_double(),
-                random_double());
+    return vec3(random_double(), random_double(), random_double());
 }
 
 inline vec3 random_vec3(double min, double max) {
-    return vec3(random_double(min, max),
-                random_double(min, max),
-                random_double(min, max));
+    return vec3(random_double(min,max), random_double(min,max), random_double(min,max));
 }
-
 
 inline vec3 random_in_unit_sphere() {
     while (true) {
-        auto p = random_vec3(-1,1);
-        if (p.length_squared() >= 1)
-            continue;
-        return p;
+        auto p = random_vec3(-1, 1);
+        if (p.length_squared() < 1) return p;
     }
 }
 
-inline vec3 random_unit_vector() {
-    return unit_vector(random_in_unit_sphere());
-}
+inline vec3 random_unit_vector() { return unit_vector(random_in_unit_sphere()); }
 
 inline vec3 random_in_unit_disk() {
     while (true) {
-        vec3 p(random_double(-1,1),
-               random_double(-1,1),
-               0);
-
-        if (p.length_squared() >= 1)
-            continue;
-
-        return p;
+        vec3 p(random_double(-1,1), random_double(-1,1), 0);
+        if (p.length_squared() < 1) return p;
     }
 }
 
 inline vec3 random_cosine_direction() {
     constexpr double local_pi = 3.1415926535897932385;
-
-    auto r1 = random_double();
-    auto r2 = random_double();
-
+    auto r1 = random_double(), r2 = random_double();
     auto phi = 2 * local_pi * r1;
-
-    auto x = cos(phi) * sqrt(r2);
-    auto y = sin(phi) * sqrt(r2);
-    auto z = sqrt(1 - r2);
-
-    return vec3(x, y, z);
+    return vec3(cos(phi)*sqrt(r2), sin(phi)*sqrt(r2), sqrt(1-r2));
 }
+
 #endif
