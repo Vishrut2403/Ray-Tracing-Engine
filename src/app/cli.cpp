@@ -24,8 +24,8 @@ RenderConfig parse_cli(int argc, char** argv)
 
     for (int i = 2; i < argc; ++i) {
         std::string a = argv[i];
-        if ((a == "--width"  || a == "-w") && i+1 < argc) config.width      = std::atoi(argv[++i]);
-        else if ((a == "--height" || a == "-h") && i+1 < argc) config.height = std::atoi(argv[++i]);
+        if      ((a == "--width"  || a == "-w") && i+1 < argc) config.width     = std::atoi(argv[++i]);
+        else if ((a == "--height" || a == "-h") && i+1 < argc) config.height    = std::atoi(argv[++i]);
         else if ((a == "--spp"    || a == "-s") && i+1 < argc) config.samples   = std::atoi(argv[++i]);
         else if ((a == "--depth"  || a == "-d") && i+1 < argc) config.max_depth = std::atoi(argv[++i]);
         else if ((a == "--tile"   || a == "-t") && i+1 < argc) config.tile_size = std::atoi(argv[++i]);
@@ -35,10 +35,19 @@ RenderConfig parse_cli(int argc, char** argv)
         config.output_path.substr(config.output_path.size() - 4) != ".ppm")
         config.output_path += ".ppm";
 
-    std::filesystem::create_directories("renders");
+    namespace fs = std::filesystem;
 
-    config.output_path =
-        (std::filesystem::current_path() / "renders" / config.output_path).string();
+    fs::path out(config.output_path);
+
+    if (out.has_parent_path() && out.parent_path() != fs::path(".")) {
+        // Path includes a directory (e.g. results/out.ppm) — use as-is
+        fs::create_directories(out.parent_path());
+        config.output_path = (fs::current_path() / out).string();
+    } else {
+        // Bare filename — put it in renders/ as before
+        fs::create_directories("renders");
+        config.output_path = (fs::current_path() / "renders" / out).string();
+    }
 
     return config;
 }
