@@ -18,11 +18,16 @@ A physically-based CPU/CUDA path tracer written in C++, originally following *Ra
 
 ## Platform Support
 
-| Platform | CPU Render | GPU Render (CUDA) |
-|:---|:---:|:---:|
-| Linux (Arch / CachyOS) | ✓ tested | ✓ tested |
-| macOS | ✓ (Homebrew) | ✗ no NVIDIA support |
-| Windows | untested | untested |
+> **This project runs on Linux only.**
+> macOS is not supported — NVIDIA dropped CUDA support on macOS after 2019,
+> and the GPU backend is a core part of this project.
+> Windows has not been tested.
+
+| Platform | Status |
+|:---|:---:|
+| Linux (Arch / CachyOS) | ✓ fully supported |
+| macOS | ✗ not supported (no CUDA) |
+| Windows | untested |
 
 ---
 
@@ -48,7 +53,7 @@ A physically-based CPU/CUDA path tracer written in C++, originally following *Ra
 - Center-priority tile ordering for progressive refinement
 - OpenMP multithreading across tiles
 
-### CUDA Backend (Linux only)
+### CUDA Backend
 - Full path tracing kernel (`__global__` `Li()`) — one thread per pixel
 - Per-thread `curandState` for independent random streams
 - Flat scene representation — tagged unions replace virtual dispatch
@@ -81,15 +86,14 @@ A physically-based CPU/CUDA path tracer written in C++, originally following *Ra
 
 ---
 
-## Requirements & Build
+## Requirements
 
-### Linux (Arch / CachyOS)
-
+### Dependencies
 ```bash
 sudo pacman -S cmake gcc openmp glfw
 ```
 
-For GPU rendering, also install CUDA (~3GB):
+### CUDA Toolkit (~3GB)
 ```bash
 sudo pacman -S cuda
 ```
@@ -116,24 +120,9 @@ nvidia-smi
 > in `CMakeLists.txt` to match your GPU.
 > Find your compute capability at: https://developer.nvidia.com/cuda-gpus
 
-Then build:
-```bash
-git clone https://github.com/Vishrut2403/Ray-Tracing-Engine
-cd Ray-Tracing-Engine
-cmake -S . -B build
-cmake --build build
-```
-
 ---
 
-### macOS
-
-CUDA is not supported on macOS. Only the CPU renderer is available.
-
-```bash
-# Install dependencies
-brew install cmake glfw libomp
-```
+## Build
 
 ```bash
 git clone https://github.com/Vishrut2403/Ray-Tracing-Engine
@@ -141,9 +130,6 @@ cd Ray-Tracing-Engine
 cmake -S . -B build
 cmake --build build
 ```
-
-CMake will automatically detect `libomp` from Homebrew and link it.
-If OpenMP is not found, the renderer will still work but will be single-threaded.
 
 ---
 
@@ -153,10 +139,10 @@ If OpenMP is not found, the renderer will still work but will be single-threaded
 # CPU render with live preview
 ./build/render output.ppm cornell --spp 400 --width 800 --height 800
 
-# GPU render with live preview (Linux only)
+# GPU render with live preview
 ./build/render output.ppm cornell --spp 400 --width 800 --height 800 --device gpu
 
-# Headless GPU render (Linux only, fastest)
+# Headless GPU render (fastest)
 ./build/render output.ppm cornell --spp 1024 --width 1200 --height 1200 --device gpu --no-preview
 
 # Energy conservation validation
@@ -172,14 +158,14 @@ If OpenMP is not found, the renderer will still work but will be single-threaded
 | `--spp N` | 64 | Samples per pixel |
 | `--depth N` | 10 | Maximum ray bounce depth |
 | `--tile N` | 32 | Tile size (CPU only) |
-| `--device cpu/gpu` | cpu | Render backend (gpu: Linux only) |
+| `--device cpu/gpu` | cpu | Render backend |
 | `--no-preview` | off | Disable OpenGL preview window |
 
 ---
 
 ## Validation
 
-Energy conservation verified via furnace test — a single lambertian sphere (albedo = 0.5) rendered in a uniform white environment with no area lights. Under correct energy conservation, every pixel must converge to linear 0.5 regardless of the number of bounces.
+Energy conservation verified via furnace test — a single lambertian sphere (albedo = 0.5) rendered in a uniform white environment with no area lights. Under correct energy conservation every pixel must converge to linear 0.5 regardless of the number of bounces.
 
 - Expected: linear 0.5 → gamma-corrected PPM value ≈ 181
 - Measured: linear avg = 0.507, error = 0.007
