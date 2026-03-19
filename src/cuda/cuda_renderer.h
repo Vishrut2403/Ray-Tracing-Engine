@@ -5,6 +5,7 @@
 #include "scenes/cornell_scene.h"
 #include "core/vec3.h"
 #include "viewer/preview_window.h"
+#include <string>
 
 void cuda_render(const Scene& scene,
                  Framebuffer& fb,
@@ -12,4 +13,5 @@ void cuda_render(const Scene& scene,
                  const color& background,
                  int spp,
                  int max_depth,
-                 PreviewWindow* preview = nullptr);
+                 PreviewWindow* preview = nullptr,
+                 const std::string& scene_name = "cornell");
