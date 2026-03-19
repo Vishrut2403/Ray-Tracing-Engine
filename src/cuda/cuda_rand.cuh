@@ -3,13 +3,9 @@
 #include <curand_kernel.h>
 #include "core/vec3.h"
 
-// Each GPU thread owns one curandState — pass by pointer through the call stack.
-// Initialize with: cuda_rand_init<<<...>>>(states, seed, width*height)
-
 __global__ void cuda_rand_init(curandState* states, unsigned long long seed, int n) {
     int id = blockIdx.x * blockDim.x + threadIdx.x;
     if (id >= n) return;
-    // Different sequence per thread, same seed — gives uncorrelated streams
     curand_init(seed, id, 0, &states[id]);
 }
 
