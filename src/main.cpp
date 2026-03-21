@@ -3,6 +3,7 @@
 #include "scenes/scene_factory.h"
 #include "core/camera_factory.h"
 #include "render/renderer.h"
+#include "render/ppm_renderer.h"
 #include "render/framebuffer.h"
 #include "io/image_writer.h"
 #include "viewer/preview_window.h"
@@ -38,6 +39,7 @@ int main(int argc, char** argv)
     RenderConfig config  = parse_cli(argc, argv);
     bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
     bool no_preview      = has_flag(argc, argv, "--no-preview");
+    bool use_ppm         = (config.feature == "ppm");
 
     if (config.feature == "furnace")
         apply_furnace_preset(config);
@@ -46,7 +48,17 @@ int main(int argc, char** argv)
     camera cam   = CameraFactory::build(config);
     Framebuffer fb(config.width, config.height);
 
-    if (use_gpu) {
+    if (use_ppm) {
+        PPMRenderer ppm(
+            config.samples,      // iterations
+            500000,              // photons per iteration
+            config.max_depth,    // max depth
+            15.0,                // initial radius (tune for scene scale)
+            0.7                  // alpha
+        );
+        ppm.render(scene, fb, cam, config.background);
+
+    } else if (use_gpu) {
         if (no_preview) {
             cuda_render(scene, fb, cam, config.background,
                         config.samples, config.max_depth,
@@ -71,10 +83,8 @@ int main(int argc, char** argv)
             renderer.render(scene, fb, cam, config.background);
         } else {
             PreviewWindow preview(config.width, config.height);
-            std::atomic<bool> render_done = false;
             std::thread render_thread([&]() {
                 renderer.render(scene, fb, cam, config.background);
-                render_done = true;
             });
             while (!preview.should_close()) {
                 preview.poll_events();
@@ -85,11 +95,10 @@ int main(int argc, char** argv)
         }
     }
 
-    if (ends_with(config.output_path, ".exr")) {
+    if (ends_with(config.output_path, ".exr"))
         ImageWriter::write_exr(config.output_path, fb);
-    } else {
+    else
         ImageWriter::write_ppm(config.output_path, fb, config.samples);
-    }
 
     return 0;
 }
