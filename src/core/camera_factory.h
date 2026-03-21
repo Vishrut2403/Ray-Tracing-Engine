@@ -18,8 +18,8 @@ public:
 
         if (config.feature == "bunny")
             return camera(
-                point3(0, 1.2, 3.5),   // eye level with the bunny
-                point3(0, 0.8, 0),      // look at centre of bunny
+                point3(0, 1.2, 3.5),  
+                point3(0, 0.8, 0),  
                 vec3(0, 1, 0),
                 45.0,
                 double(config.width)/config.height,
@@ -35,6 +35,11 @@ public:
             return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),
                 40.0, double(config.width)/config.height,
                 0.0, 10.0, 0.0, 1.0);
+
+        if (config.feature == "helmet")
+            return camera(point3(0, 0.5, 3), point3(0, 0, 0), vec3(0,1,0),
+                45.0, double(config.width)/config.height,
+                0.0, 3.0, 0.0, 1.0);
 
         // Cornell box default
         return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),

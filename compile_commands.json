@@ -1,0 +1,80 @@
+[
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/app/cli.cpp.o -c /myspace/Ray-Tracing-Engine/src/app/cli.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/app/cli.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/app/cli.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/io/gltf_impl.cpp.o -c /myspace/Ray-Tracing-Engine/src/io/gltf_impl.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/io/gltf_impl.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/io/gltf_impl.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/io/image_writer.cpp.o -c /myspace/Ray-Tracing-Engine/src/io/image_writer.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/io/image_writer.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/io/image_writer.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/io/third_party_impl.cpp.o -c /myspace/Ray-Tracing-Engine/src/io/third_party_impl.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/io/third_party_impl.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/io/third_party_impl.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/main.cpp.o -c /myspace/Ray-Tracing-Engine/src/main.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/main.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/main.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/render/integrator.cpp.o -c /myspace/Ray-Tracing-Engine/src/render/integrator.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/render/integrator.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/render/integrator.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/render/renderer.cpp.o -c /myspace/Ray-Tracing-Engine/src/render/renderer.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/render/renderer.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/render/renderer.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/render/tile.cpp.o -c /myspace/Ray-Tracing-Engine/src/render/tile.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/render/tile.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/render/tile.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/scenes/cornell_scene.cpp.o -c /myspace/Ray-Tracing-Engine/src/scenes/cornell_scene.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/scenes/cornell_scene.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/scenes/cornell_scene.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/g++ -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=gnu++17 -fopenmp -o CMakeFiles/render.dir/src/viewer/preview_window.cpp.o -c /myspace/Ray-Tracing-Engine/src/viewer/preview_window.cpp",
+  "file": "/myspace/Ray-Tracing-Engine/src/viewer/preview_window.cpp",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/viewer/preview_window.cpp.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/gcc -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -o CMakeFiles/render.dir/src/external/miniz.c.o -c /myspace/Ray-Tracing-Engine/src/external/miniz.c",
+  "file": "/myspace/Ray-Tracing-Engine/src/external/miniz.c",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/external/miniz.c.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/opt/cuda/bin/nvcc -forward-unknown-to-host-compiler -I/myspace/Ray-Tracing-Engine/src -I/myspace/Ray-Tracing-Engine/src/external -I/myspace/Ray-Tracing-Engine/src/cuda -isystem /opt/cuda/targets/x86_64-linux/include -isystem /opt/cuda/targets/x86_64-linux/include/cccl -g -std=c++17 \"--generate-code=arch=compute_86,code=[compute_86,sm_86]\" -x cu -rdc=true -c /myspace/Ray-Tracing-Engine/src/cuda/cuda_renderer.cu -o CMakeFiles/render.dir/src/cuda/cuda_renderer.cu.o",
+  "file": "/myspace/Ray-Tracing-Engine/src/cuda/cuda_renderer.cu",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/render.dir/src/cuda/cuda_renderer.cu.o"
+},
+{
+  "directory": "/myspace/Ray-Tracing-Engine/build",
+  "command": "/usr/bin/gcc -I/myspace/Ray-Tracing-Engine/src/external -g -o CMakeFiles/glad.dir/src/external/glad.c.o -c /myspace/Ray-Tracing-Engine/src/external/glad.c",
+  "file": "/myspace/Ray-Tracing-Engine/src/external/glad.c",
+  "output": "/myspace/Ray-Tracing-Engine/build/CMakeFiles/glad.dir/src/external/glad.c.o"
+}
+]
