@@ -1,6 +1,7 @@
 #pragma once
 
 #include "cuda/gpu_scene.cuh"
+#include "cuda/gpu_mesh_uploader.h"
 #include <vector>
 #include <cstdio>
 #include <cstring>
@@ -18,6 +19,32 @@ public:
         if (scene_name == "caustics")
             return build_caustics(scene_name);
         return build_cornell(scene_name);
+    }
+
+    static GpuScene build_bunny_scene(const std::string& name, GpuMesh& out_mesh) {
+        std::vector<GpuMaterial> mats;
+        std::vector<GpuHittable> hits;
+        std::vector<int>         lids;
+
+        int floor_id = add_lambertian(mats, vec3(0.6f, 0.6f, 0.6f));
+        int light_id = add_light(mats, vec3(12.f, 12.f, 12.f));
+        int bunny_id = add_ggx(mats, vec3(0.8f, 0.6f, 0.2f), 0.2f, 0.9f);
+
+        int lid = (int)hits.size();
+        add_xz_rect(hits, -2, 2, -1, 1, 4.0f, light_id, true);
+        lids.push_back(lid);
+        add_xz_rect(hits, -5, 5, -5, 5, 0.0f, floor_id, false);
+
+        GpuScene scene = finalise(mats, hits, lids, name);
+
+        out_mesh = upload_obj_mesh("models/bunny.obj", bunny_id, 8.0, vec3(0, 0.15, 0));
+        scene.d_triangles  = out_mesh.d_triangles;
+        scene.d_tri_bvh    = out_mesh.d_bvh;
+        scene.n_triangles  = out_mesh.n_triangles;
+        scene.n_tri_bvh    = out_mesh.n_bvh_nodes;
+        scene.tri_bvh_root = out_mesh.bvh_root;
+
+        return scene;
     }
 
 private:
@@ -105,7 +132,6 @@ private:
         scene.n_lights    = (int)lids.size();
         upload(mats, &scene.d_materials, scene.n_materials);
         upload(hits, &scene.d_hittables, scene.n_hittables);
-
         if (!lids.empty()) {
             upload(lids, &scene.d_light_ids, scene.n_lights);
         } else {
@@ -114,7 +140,6 @@ private:
             cudaMemcpy(scene.d_light_ids, &dummy, sizeof(int),
                        cudaMemcpyHostToDevice);
         }
-
         printf("[SceneUploader:%s] mats=%d hittables=%d lights=%d\n",
                name.c_str(), scene.n_materials, scene.n_hittables, scene.n_lights);
         return scene;
@@ -128,7 +153,7 @@ private:
         int red_id   = add_lambertian(mats, vec3(0.65f,0.05f,0.05f));
         int white_id = add_lambertian(mats, vec3(0.73f,0.73f,0.73f));
         int green_id = add_lambertian(mats, vec3(0.12f,0.45f,0.15f));
-        int light_id = add_light     (mats, vec3(60.f, 60.f, 60.f ));
+        int light_id = add_light(mats, vec3(30.f, 28.f, 25.f));
 
         add_yz_rect(hits, 0,555, 0,555, 555, green_id, true );
         add_yz_rect(hits, 0,555, 0,555, 0,   red_id,   false);
@@ -137,7 +162,7 @@ private:
         add_xy_rect(hits, 0,555, 0,555, 555, white_id, true );
 
         int lid = (int)hits.size();
-        add_xz_rect(hits, 213,343, 227,332, 554, light_id, true);
+        add_xz_rect(hits, -3, 3, -2, 2, 4.0f, light_id, true);
         lids.push_back(lid);
 
         add_box(hits, vec3(0,0,0), vec3(165,330,165), white_id,  15.f, vec3(265,0,295));

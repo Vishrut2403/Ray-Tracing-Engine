@@ -6,9 +6,11 @@
 #include "cuda/gpu_scene.cuh"
 #include "cuda/gpu_hit.cuh"
 #include "cuda/gpu_material.cuh"
+#include "cuda/gpu_env_map.cuh"
+#include "cuda/gpu_triangle.h"
 #include "cuda/cuda_rand.cuh"
 
-// GPU_PI defined in gpu_material.cuh — do not redefine here
+#define RAY_OFFSET 0.02
 
 __device__ inline double gpu_power_heuristic(double a, double b) {
     double a2 = a*a, b2 = b*b;
@@ -26,7 +28,7 @@ __device__ inline double gpu_light_pdf(const GpuHittable* hittables,
         ray test_ray(origin, dir, 0.0);
         ray local = (lh.has_rotation || lh.translate_offset.length_squared() > 0.0)
                     ? apply_inverse_transform(test_ray, lh) : test_ray;
-        if (hit_xz_rect(lh, local, interval(0.001, 1e30), tmp)) {
+        if (hit_xz_rect(lh, local, interval(RAY_OFFSET, 1e30), tmp)) {
             double area  = (double)(lh.a1-lh.a0) * (double)(lh.b1-lh.b0);
             double dist2 = tmp.t * tmp.t * dir.length_squared();
             double cos_t = fabs(dot(tmp.normal, unit_vector(dir)));
@@ -48,13 +50,22 @@ __device__ inline vec3 gpu_light_random(const GpuHittable* hittables,
     return pt + lh.translate_offset - origin;
 }
 
-__device__ vec3 gpu_Li(const ray& initial_ray,
-                        const vec3& background,
-                        const GpuHittable* hittables, int n_hittables,
-                        const GpuMaterial* materials,
-                        const int* light_ids, int n_lights,
-                        int max_depth,
-                        curandState* rng) {
+#define MESH_ARGS tris, tri_bvh, tri_root, n_tris
+
+__device__ vec3 gpu_Li(
+    const ray& initial_ray,
+    const vec3& background,
+    const GpuHittable* hittables, int n_hittables,
+    const GpuMaterial* materials,
+    const int* light_ids, int n_lights,
+    int max_depth,
+    curandState* rng,
+    const GpuTriangle*   tris     = nullptr,
+    const GpuTriBVHNode* tri_bvh  = nullptr,
+    int                  tri_root = 0,
+    int                  n_tris   = 0,
+    const GpuEnvMap*     env_map  = nullptr
+) {
     ray   r    = initial_ray;
     vec3  L    (0,0,0);
     vec3  beta (1,1,1);
@@ -63,13 +74,20 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
 
     for (int depth = 0; depth < max_depth; ++depth) {
         GpuHitRecord rec;
-        if (!hit_scene(hittables, n_hittables, r, interval(0.001, 1e30), rec)) {
+        if (!hit_scene(hittables, n_hittables, r, interval(RAY_OFFSET, 1e30), rec,
+                       MESH_ARGS)) {
+            vec3 Le = (env_map && env_map->valid)
+                      ? gpu_env_Le(*env_map, r.direction())
+                      : background;
+
             if (specular_bounce || n_lights == 0) {
-                L = L + beta * background;
+                L = L + beta * Le;
             } else {
-                double lp = gpu_light_pdf(hittables, light_ids, n_lights,
-                                           rec.p, r.direction());
-                L = L + beta * background * gpu_power_heuristic(last_bsdf_pdf, lp);
+                double lp = (env_map && env_map->valid)
+                            ? (double)gpu_env_pdf(*env_map, r.direction())
+                            : gpu_light_pdf(hittables, light_ids, n_lights,
+                                            rec.p, r.direction());
+                L = L + beta * Le * gpu_power_heuristic(last_bsdf_pdf, lp);
             }
             break;
         }
@@ -87,32 +105,55 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
         }
 
         if (!specular_bounce && n_lights > 0) {
-            vec3   to_light  = gpu_light_random(hittables, light_ids, n_lights, rec.p, rng);
+            vec3   to_light  = gpu_light_random(hittables, light_ids, n_lights,
+                                                 rec.p, rng);
             double distance  = to_light.length();
             vec3   wi        = to_light / distance;
-            double light_pdf = gpu_light_pdf(hittables, light_ids, n_lights, rec.p, wi);
+            double light_pdf = gpu_light_pdf(hittables, light_ids, n_lights,
+                                              rec.p, wi);
 
             if (light_pdf > 0.0) {
                 GpuHitRecord shadow_rec;
                 bool occluded = hit_scene(hittables, n_hittables,
                                           ray(rec.p, wi, r.time()),
-                                          interval(0.001, distance - 1e-4),
-                                          shadow_rec);
+                                          interval(RAY_OFFSET, distance - RAY_OFFSET),
+                                          shadow_rec, MESH_ARGS);
                 if (!occluded) {
                     GpuHitRecord light_rec;
                     if (hit_scene(hittables, n_hittables,
                                   ray(rec.p, wi, r.time()),
-                                  interval(0.001, 1e30), light_rec)) {
+                                  interval(RAY_OFFSET, 1e30), light_rec,
+                                  MESH_ARGS)) {
                         vec3 Le = gpu_emitted(materials[light_rec.mat_id],
                                               light_rec.front_face);
                         if (Le.length_squared() > 0.0) {
-                            vec3   f         = gpu_f(mat, wi, rec.normal);
-                            double bsdf_pdf  = gpu_pdf(mat, wi, rec.normal);
-                            double weight    = gpu_power_heuristic(light_pdf, bsdf_pdf);
-                            double cos_theta = fabs(dot(rec.normal, wi));
-                            L = L + beta * f * Le * (cos_theta * weight / light_pdf);
+                            vec3   f        = gpu_f(mat, wi, rec.normal);
+                            double bsdf_pdf = gpu_pdf(mat, wi, rec.normal);
+                            double weight   = gpu_power_heuristic(light_pdf, bsdf_pdf);
+                            double cos_t    = fabs(dot(rec.normal, wi));
+                            L = L + beta * f * Le * (cos_t * weight / light_pdf);
                         }
                     }
+                }
+            }
+        }
+
+        if (!specular_bounce && env_map && env_map->valid) {
+            float env_pdf_val;
+            vec3  wi = gpu_env_sample(*env_map, rng, env_pdf_val);
+            if (env_pdf_val > 0.0f) {
+                GpuHitRecord shadow_rec;
+                bool occluded = hit_scene(hittables, n_hittables,
+                                          ray(rec.p, wi, r.time()),
+                                          interval(RAY_OFFSET, 1e30),
+                                          shadow_rec, MESH_ARGS);
+                if (!occluded) {
+                    vec3   Le       = gpu_env_Le(*env_map, wi);
+                    vec3   f        = gpu_f(mat, wi, rec.normal);
+                    double bsdf_pdf = gpu_pdf(mat, wi, rec.normal);
+                    double weight   = gpu_power_heuristic((double)env_pdf_val, bsdf_pdf);
+                    double cos_t    = fabs(dot(rec.normal, wi));
+                    L = L + beta * f * Le * (cos_t * weight / (double)env_pdf_val);
                 }
             }
         }
@@ -141,6 +182,9 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
     return L;
 }
 
+#undef MESH_ARGS
+#undef RAY_OFFSET
+
 struct GpuCamera {
     vec3   origin, lower_left, horizontal, vertical, u, v, w;
     double lens_radius;
@@ -151,20 +195,23 @@ __device__ inline ray gpu_get_ray(const GpuCamera& cam, double s, double t,
     vec3 rd     = cam.lens_radius * rand_in_unit_sphere(rng);
     rd[2] = 0.0;
     vec3 offset = cam.u * rd.x() + cam.v * rd.y();
-    return ray(
-        cam.origin + offset,
-        cam.lower_left + s*cam.horizontal + t*cam.vertical - cam.origin - offset,
-        0.0
-    );
+    return ray(cam.origin + offset,
+               cam.lower_left + s*cam.horizontal + t*cam.vertical
+               - cam.origin - offset, 0.0);
 }
 
-__global__ void render_kernel(
-    float* framebuffer, int width, int height, int spp, int max_depth,
+__global__ void accumulate_kernel(
+    float* d_accum, int width, int height, int batch_spp, int max_depth,
     GpuCamera cam, vec3 background,
-    const GpuHittable* hittables, int n_hittables,
-    const GpuMaterial* materials,
-    const int* light_ids, int n_lights,
-    curandState* rand_states
+    const GpuHittable*   hittables,  int n_hittables,
+    const GpuMaterial*   materials,
+    const int*           light_ids,  int n_lights,
+    curandState*         rand_states,
+    const GpuTriangle*   tris,
+    const GpuTriBVHNode* tri_bvh,
+    int                  tri_root,
+    int                  n_tris,
+    const GpuEnvMap*     env_map
 ) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -174,16 +221,18 @@ __global__ void render_kernel(
     curandState rng = rand_states[id];
 
     vec3 pixel(0,0,0);
-    for (int s = 0; s < spp; ++s) {
+    for (int s = 0; s < batch_spp; ++s) {
         double u = (x + rand_double(&rng)) / (width  - 1);
         double v = (y + rand_double(&rng)) / (height - 1);
-        pixel = pixel + gpu_Li(gpu_get_ray(cam, u, v, &rng), background,
-                                hittables, n_hittables, materials,
-                                light_ids, n_lights, max_depth, &rng);
+        ray r    = gpu_get_ray(cam, u, v, &rng);
+        pixel    = pixel + gpu_Li(r, background,
+                                   hittables, n_hittables, materials,
+                                   light_ids, n_lights, max_depth, &rng,
+                                   tris, tri_bvh, tri_root, n_tris,
+                                   env_map);
     }
-    pixel = pixel / (double)spp;
-    framebuffer[id*3+0] = (float)pixel.x();
-    framebuffer[id*3+1] = (float)pixel.y();
-    framebuffer[id*3+2] = (float)pixel.z();
-    rand_states[id] = rng;
+    d_accum[id*3+0] += (float)pixel.x();
+    d_accum[id*3+1] += (float)pixel.y();
+    d_accum[id*3+2] += (float)pixel.z();
+    rand_states[id]  = rng;
 }
