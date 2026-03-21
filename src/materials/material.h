@@ -25,8 +25,6 @@ public:
     virtual double     pdf(const ray& wo, const vec3& wi, const hit_record& rec) const = 0;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 class lambertian : public material {
 public:
     std::shared_ptr<texture> albedo;
@@ -53,8 +51,6 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-
 class metal : public material {
 public:
     color  albedo;
@@ -71,8 +67,6 @@ public:
     virtual color  f  (const ray&, const vec3&, const hit_record&) const override { return color(0,0,0); }
     virtual double pdf(const ray&, const vec3&, const hit_record&) const override { return 0.0; }
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class dielectric : public material {
 public:
@@ -101,20 +95,11 @@ private:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GGX microfacet BRDF (Cook-Torrance)
-//
-// f = D(h) * G(wo,wi) * F(wo,h) / (4 |wo·n| |wi·n|)
-//   + diffuse lobe (lambertian, energy-conserving via Fresnel)
-//
-// Sampling: visible normal distribution (VNDF, Heitz 2018)
-// ─────────────────────────────────────────────────────────────────────────────
-
 class ggx : public material {
 public:
     color  base_color;
-    double roughness; // perceptual — remapped to alpha = r^2 internally
-    double metallic;  // 0 = dielectric, 1 = conductor
+    double roughness;
+    double metallic; 
 
     ggx(const color& base, double r, double m = 0.0)
         : base_color(base),
@@ -125,7 +110,6 @@ public:
         double alpha = roughness * roughness;
         onb uvw; uvw.build_from_w(rec.normal);
 
-        // Transform wo to local (shading) space, flip to outgoing convention
         vec3 wo_l = -unit_vector(vec3(
             dot(wo.direction(), uvw.u()),
             dot(wo.direction(), uvw.v()),
@@ -164,13 +148,11 @@ public:
     }
 
 private:
-    // GGX NDF
     static double D(double ndoth, double a) {
         double a2 = a*a, d = ndoth*ndoth*(a2-1.0)+1.0;
         return a2 / (pi * d * d);
     }
 
-    // Smith height-correlated G2
     static double G2(double ndotv, double ndotl, double a) {
         double a2 = a*a;
         double gv = ndotl * std::sqrt(a2 + (1.0-a2)*ndotv*ndotv);
@@ -178,19 +160,16 @@ private:
         return 2.0*ndotv*ndotl / (gv + gl + 1e-7);
     }
 
-    // Smith G1 (used in VNDF pdf)
     static double G1(double ndotv, double a) {
         double a2 = a*a;
         return 2.0*ndotv / (ndotv + std::sqrt(a2 + (1.0-a2)*ndotv*ndotv));
     }
 
-    // Schlick Fresnel — F0 blends between dielectric (0.04) and metal (base_color)
     color F(double vdoth) const {
         color f0 = color(0.04,0.04,0.04)*(1.0-metallic) + base_color*metallic;
         return f0 + (color(1,1,1)-f0) * std::pow(1.0-vdoth, 5.0);
     }
 
-    // Full Cook-Torrance evaluation including diffuse lobe
     color eval(const vec3& v, const vec3& l, const vec3& n) const {
         double a      = roughness * roughness;
         vec3   h      = unit_vector(v + l);
@@ -209,7 +188,6 @@ private:
         return (specular + diffuse) * ndotl;
     }
 
-    // Visible normal distribution sampling (Heitz 2018)
     static vec3 sample_vndf(const vec3& wo, double a) {
         vec3 vh = unit_vector(vec3(a*wo.x(), a*wo.y(), wo.z()));
 
@@ -229,7 +207,6 @@ private:
         return unit_vector(vec3(a*nh.x(), a*nh.y(), std::max(0.0, nh.z())));
     }
 
-    // VNDF pdf in local space
     static double vndf_pdf(const vec3& wo, const vec3& h, double a) {
         double ndotwo = std::max(wo.z(), 1e-7);
         double hdotwo = std::max(dot(h, wo), 1e-7);
@@ -237,8 +214,6 @@ private:
         return D(ndoth, a) * G1(ndotwo, a) * hdotwo / (4.0 * ndotwo * hdotwo);
     }
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class diffuse_light : public material {
 public:
@@ -259,8 +234,6 @@ public:
     virtual color  f  (const ray&, const vec3&, const hit_record&) const override { return color(0,0,0); }
     virtual double pdf(const ray&, const vec3&, const hit_record&) const override { return 0.0; }
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
 
 class isotropic : public material {
 public:
@@ -284,22 +257,11 @@ public:
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Rough dielectric (microfacet transmission + reflection)
-//
-// Uses the same GGX NDF and Smith G2 as the ggx conductor class.
-// At each sample, Fresnel decides whether to reflect or refract.
-// Reflection: VNDF-sampled GGX specular lobe (same as ggx class)
-// Transmission: GGX microfacet BTDF via Snell's law refraction
-//
-// Reference: Walter et al. 2007 "Microfacet Models for Refraction"
-// ─────────────────────────────────────────────────────────────────────────────
-
 class rough_dielectric : public material {
 public:
-    color  tint;         // colour tint of the transmitted light (1,1,1 = clear)
-    double roughness;    // perceptual roughness (remapped to alpha = r^2)
-    double ior;          // index of refraction (glass ~1.5, water ~1.33)
+    color  tint;     
+    double roughness; 
+    double ior;        
 
     rough_dielectric(const color& t, double r, double ior = 1.5)
         : tint(t),
@@ -313,21 +275,17 @@ public:
 
         onb uvw; uvw.build_from_w(rec.normal);
 
-        // Transform v to local space
         vec3 v_l = vec3(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
 
-        // Sample microfacet normal from VNDF
         vec3 h_l = sample_vndf(v_l, alpha);
         vec3 h   = unit_vector(uvw.local(h_l));
 
-        // Make sure h is on the same side as v
         if (dot(h, v) < 0.0) h = -h;
 
         double vdoth   = clamp(dot(v, h), 0.0, 1.0);
         double F_val   = schlick(vdoth, eta);
 
         if (random_double() < F_val) {
-            // ── Reflection lobe ──────────────────────────────────────────────
             vec3 wi = unit_vector(reflect(-v, h));
             if (dot(wi, rec.normal) <= 0.0)
                 return { wi, color(0,0,0), 0.0, false };
@@ -335,7 +293,6 @@ public:
             double p = F_val * vndf_pdf(v_l, h_l, alpha);
             if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
 
-            // Cook-Torrance specular BRDF value
             double ndotv = std::max(dot(rec.normal, v),  1e-7);
             double ndotl = std::max(dot(rec.normal, wi), 1e-7);
             double ndoth = std::max(dot(rec.normal, h),  1e-7);
@@ -346,20 +303,17 @@ public:
             return { wi, f_val * ndotl / p, p, false };
 
         } else {
-            // ── Transmission lobe ────────────────────────────────────────────
             vec3 wi_try;
             bool tir = !refract_microfacet(-v, h, eta, wi_try);
             if (tir) {
-                // Total internal reflection — fall back to specular
                 vec3 wi = unit_vector(reflect(-v, h));
                 return { wi, color(F_val,F_val,F_val), 1.0, true };
             }
             vec3 wi = unit_vector(wi_try);
 
             if (dot(wi, rec.normal) >= 0.0)
-                return { wi, color(0,0,0), 0.0, false }; // wrong side
+                return { wi, color(0,0,0), 0.0, false };
 
-            // Walter 2007 BTDF pdf
             double p = (1.0 - F_val) * vndf_pdf_transmission(v_l, h_l, wi, h, eta, alpha);
             if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
 
@@ -370,7 +324,6 @@ public:
             double Dval   = D(ndoth, alpha);
             double Gval   = G2(ndotv, ndotl, alpha);
 
-            // Walter BTDF
             double denom  = (vdoth + eta * idoth);
             double f_val  = (1.0 - F_val) * Dval * Gval * vdoth * idoth
                             / (ndotv * denom * denom);
@@ -381,7 +334,6 @@ public:
 
     virtual color f(const ray& wo, const vec3& wi,
                     const hit_record& rec) const override {
-        // Not used directly (we importance sample), return 0
         return color(0,0,0);
     }
 
@@ -391,19 +343,16 @@ public:
     }
 
 private:
-    // Schlick Fresnel for dielectric
     static double schlick(double cos_theta, double eta) {
         double r0 = (1.0 - eta) / (1.0 + eta); r0 *= r0;
         return r0 + (1.0 - r0) * std::pow(1.0 - cos_theta, 5.0);
     }
 
-    // GGX NDF (same as ggx class)
     static double D(double ndoth, double a) {
         double a2 = a*a, d = ndoth*ndoth*(a2-1.0)+1.0;
         return a2 / (pi * d * d);
     }
 
-    // Smith G2 (same as ggx class)
     static double G2(double ndotv, double ndotl, double a) {
         double a2 = a*a;
         double gv = ndotl * std::sqrt(a2 + (1.0-a2)*ndotv*ndotv);
@@ -416,17 +365,15 @@ private:
         return 2.0*ndotv / (ndotv + std::sqrt(a2 + (1.0-a2)*ndotv*ndotv));
     }
 
-    // Refract with microfacet normal h instead of geometric normal
     static bool refract_microfacet(const vec3& v, const vec3& h,
                                     double eta, vec3& refracted) {
         double cos_i = dot(v, h);
         double sin2_t = eta*eta * (1.0 - cos_i*cos_i);
-        if (sin2_t >= 1.0) return false; // TIR
+        if (sin2_t >= 1.0) return false;
         refracted = (eta * cos_i - std::sqrt(1.0 - sin2_t)) * h - eta * v;
         return true;
     }
 
-    // VNDF sampling (same as ggx class)
     static vec3 sample_vndf(const vec3& wo, double a) {
         vec3 vh = unit_vector(vec3(a*wo.x(), a*wo.y(), wo.z()));
         double lensq = vh.x()*vh.x() + vh.y()*vh.y();

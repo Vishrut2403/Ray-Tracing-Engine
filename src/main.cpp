@@ -12,6 +12,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <string>
 
 static bool has_flag(int argc, char** argv, const char* flag) {
     for (int i = 1; i < argc; ++i)
@@ -25,6 +26,11 @@ static bool get_flag_value(int argc, char** argv,
         if (strcmp(argv[i], flag) == 0 && strcmp(argv[i+1], value) == 0)
             return true;
     return false;
+}
+
+static bool ends_with(const std::string& s, const std::string& suffix) {
+    return s.size() >= suffix.size() &&
+           s.compare(s.size()-suffix.size(), suffix.size(), suffix) == 0;
 }
 
 int main(int argc, char** argv)
@@ -79,6 +85,11 @@ int main(int argc, char** argv)
         }
     }
 
-    ImageWriter::write_ppm(config.output_path, fb, config.samples);
+    if (ends_with(config.output_path, ".exr")) {
+        ImageWriter::write_exr(config.output_path, fb);
+    } else {
+        ImageWriter::write_ppm(config.output_path, fb, config.samples);
+    }
+
     return 0;
 }
