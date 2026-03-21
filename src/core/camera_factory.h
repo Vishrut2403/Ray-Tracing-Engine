@@ -41,6 +41,11 @@ public:
                 45.0, double(config.width)/config.height,
                 0.0, 3.0, 0.0, 1.0);
 
+        if (config.feature == "ppm")
+            return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),
+                40.0, double(config.width)/config.height,
+                0.0, 10.0, 0.0, 1.0);
+
         // Cornell box default
         return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),
                       40.0, double(config.width)/config.height,
