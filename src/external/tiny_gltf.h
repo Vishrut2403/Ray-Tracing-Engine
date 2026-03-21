@@ -1,3 +1,7 @@
+#ifndef TINYGLTF_NO_STB_IMAGE_WRITE
+#define TINYGLTF_NO_STB_IMAGE_WRITE
+#endif
+
 //
 // Header-only tiny glTF 2.0 loader and serializer.
 //
