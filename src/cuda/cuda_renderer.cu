@@ -1,5 +1,8 @@
 #include "cuda/cuda_renderer.h"
 #include "cuda/gpu_integrator.cuh"
+#include "cuda/gpu_env_map.cuh"
+#include "cuda/gpu_env_uploader.h"
+#include "cuda/gpu_mesh_uploader.h"
 #include "cuda/scene_uploader.h"
 #include "cuda/cuda_rand.cuh"
 #include "render/framebuffer.h"
@@ -8,6 +11,13 @@
 
 #include <cstdio>
 #include <mutex>
+
+void GpuScene::free_device() {
+    if (d_materials) { cudaFree(d_materials); d_materials = nullptr; }
+    if (d_hittables) { cudaFree(d_hittables); d_hittables = nullptr; }
+    if (d_bvh_nodes) { cudaFree(d_bvh_nodes); d_bvh_nodes = nullptr; }
+    if (d_light_ids) { cudaFree(d_light_ids); d_light_ids = nullptr; }
+}
 
 static GpuCamera make_gpu_camera(const camera& cam) {
     GpuCamera gc;
@@ -19,36 +29,6 @@ static GpuCamera make_gpu_camera(const camera& cam) {
     gc.v           = cam.get_v();
     gc.lens_radius = cam.get_lens_radius();
     return gc;
-}
-
-__global__ void accumulate_kernel(
-    float* d_accum, int width, int height, int batch_spp,
-    GpuCamera cam, vec3 background,
-    const GpuHittable* hittables, int n_hittables,
-    const GpuMaterial* materials,
-    const int* light_ids, int n_lights,
-    int max_depth, curandState* rand_states
-) {
-    int x = blockIdx.x * blockDim.x + threadIdx.x;
-    int y = blockIdx.y * blockDim.y + threadIdx.y;
-    if (x >= width || y >= height) return;
-
-    int         id  = y * width + x;
-    curandState rng = rand_states[id];
-
-    vec3 pixel(0,0,0);
-    for (int s = 0; s < batch_spp; ++s) {
-        double u = (x + rand_double(&rng)) / (width  - 1);
-        double v = (y + rand_double(&rng)) / (height - 1);
-        ray r    = gpu_get_ray(cam, u, v, &rng);
-        pixel    = pixel + gpu_Li(r, background,
-                                   hittables, n_hittables, materials,
-                                   light_ids, n_lights, max_depth, &rng);
-    }
-    d_accum[id*3+0] += (float)pixel.x();
-    d_accum[id*3+1] += (float)pixel.y();
-    d_accum[id*3+2] += (float)pixel.z();
-    rand_states[id]  = rng;
 }
 
 void cuda_render(const Scene& scene,
@@ -63,7 +43,19 @@ void cuda_render(const Scene& scene,
     const int H = fb.get_height();
     const int N = W * H;
 
-    GpuScene gpu_scene = SceneUploader::build_and_upload(scene_name);
+    GpuMesh gpu_mesh;
+    GpuScene gpu_scene;
+
+    if (scene_name == "bunny") {
+        gpu_scene = SceneUploader::build_bunny_scene(scene_name, gpu_mesh);
+    } else {
+        gpu_scene = SceneUploader::build_and_upload(scene_name);
+    }
+
+    GpuEnvMap* d_env_map = nullptr;
+    if (scene.env) {
+        d_env_map = upload_env_map(*scene.env);
+    }
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
@@ -91,18 +83,25 @@ void cuda_render(const Scene& scene,
     const int PREVIEW_EVERY = 4;
     int samples_done = 0, batch_count = 0;
 
-    printf("[CUDA] %dx%d  spp=%d  depth=%d  scene=%s\n",
-           W, H, spp, max_depth, scene_name.c_str());
+    printf("[CUDA] %dx%d  spp=%d  depth=%d  scene=%s  mesh=%s  env=%s\n",
+           W, H, spp, max_depth, scene_name.c_str(),
+           gpu_scene.n_triangles > 0 ? "yes" : "no",
+           d_env_map ? "yes" : "no");
 
     while (samples_done < spp) {
         int batch = (samples_done + BATCH <= spp) ? BATCH : (spp - samples_done);
 
         accumulate_kernel<<<blocks, threads, 0, stream>>>(
-            d_accum, W, H, batch, gpu_cam, background,
+            d_accum, W, H, batch, max_depth, gpu_cam, background,
             gpu_scene.d_hittables, gpu_scene.n_hittables,
             gpu_scene.d_materials,
             gpu_scene.d_light_ids, gpu_scene.n_lights,
-            max_depth, d_states
+            d_states,
+            gpu_scene.d_triangles,
+            gpu_scene.d_tri_bvh,
+            gpu_scene.tri_bvh_root,
+            gpu_scene.n_triangles,
+            d_env_map
         );
         samples_done += batch;
         ++batch_count;
@@ -147,4 +146,12 @@ void cuda_render(const Scene& scene,
     cudaFree(d_states);
     cudaStreamDestroy(stream);
     gpu_scene.free_device();
+    gpu_mesh.free_device();
+
+    if (d_env_map) {
+        GpuEnvMap host_env;
+        cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap), cudaMemcpyDeviceToHost);
+        host_env.free_device();
+        cudaFree(d_env_map);
+    }
 }

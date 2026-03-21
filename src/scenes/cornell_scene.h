@@ -8,7 +8,8 @@ class env_light;
 struct Scene {
     std::shared_ptr<hittable>      world;
     std::shared_ptr<hittable_list> lights;
-    std::shared_ptr<env_light>     env = nullptr;
+    std::shared_ptr<env_light>     env     = nullptr;
+    bool                           use_bdpt = false; 
 };
 
 Scene build_cornell_volume_scene();

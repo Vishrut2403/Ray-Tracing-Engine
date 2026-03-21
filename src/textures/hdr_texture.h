@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/rtweekend.h"
+#include <iostream>  
 #include "textures/texture.h"
 #include "external/stb_image.h"
 

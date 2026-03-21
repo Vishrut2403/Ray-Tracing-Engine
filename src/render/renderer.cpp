@@ -22,6 +22,7 @@ void Renderer::render(
     auto world  = scene.world;
     auto lights = scene.lights;
     auto env    = scene.env;
+    bool use_bdpt = scene.use_bdpt;
 
     const int W = fb.get_width();
     const int H = fb.get_height();
@@ -29,9 +30,9 @@ void Renderer::render(
 
     auto tiles = generate_tiles(W, H, tile_size);
 
-    float cx = W * 0.5f, cy = H * 0.5f;
+    float cx = W*0.5f, cy = H*0.5f;
     std::sort(tiles.begin(), tiles.end(),
-        [cx,cy](const Tile& a, const Tile& b) {
+        [cx,cy](const Tile& a, const Tile& b){
             float ax=(a.x0+a.x1)*0.5f, ay=(a.y0+a.y1)*0.5f;
             float bx=(b.x0+b.x1)*0.5f, by=(b.y0+b.y1)*0.5f;
             return (ax-cx)*(ax-cx)+(ay-cy)*(ay-cy)
@@ -51,7 +52,14 @@ void Renderer::render(
                     double u = (i + random_double()) / (W - 1);
                     double v = (j + random_double()) / (H - 1);
                     ray r = cam.get_ray(u, v);
-                    pixel += Li(r, background, world, lights, max_depth, env);
+
+                    color sample;
+                    if (use_bdpt)
+                        sample = bdpt_Li(r, background, world, lights, env, max_depth);
+                    else
+                        sample = Li(r, background, world, lights, max_depth, env);
+
+                    pixel += sample;
                 }
                 pixel /= double(samples_per_pixel);
                 buf[(j-tile.y0)*tw + (i-tile.x0)] = pixel;
