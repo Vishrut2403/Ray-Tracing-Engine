@@ -6,6 +6,7 @@
 #include "scenes/bunny_scene.h"
 #include "scenes/rough_glass_scene.h"
 #include "scenes/caustics_scene.h"
+#include "scenes/helmet_scene.h"
 
 class SceneFactory {
 public:
@@ -17,6 +18,7 @@ public:
         if (name == "bunny")    return build_bunny_scene();
         if (name == "glass")    return build_rough_glass_scene();
         if (name == "caustics") return build_caustics_scene();
+        if (name == "helmet") return build_helmet_scene();
 
         std::cerr << "Unknown scene '" << name << "'. Using cornell.\n";
         return build_cornell_volume_scene();
