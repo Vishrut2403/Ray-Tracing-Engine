@@ -28,8 +28,13 @@ public:
 
         if (config.feature == "glass")
             return camera(point3(0, 1.2, 10), point3(0, 0.2, 0), vec3(0,1,0),
-                        60.0, double(config.width)/config.height,
-                        0.0, 10.0, 0.0, 1.0);
+                60.0, double(config.width)/config.height,
+                0.0, 10.0, 0.0, 1.0);
+
+        if (config.feature == "caustics")
+            return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),
+                40.0, double(config.width)/config.height,
+                0.0, 10.0, 0.0, 1.0);
 
         // Cornell box default
         return camera(point3(278,278,-800), point3(278,278,0), vec3(0,1,0),

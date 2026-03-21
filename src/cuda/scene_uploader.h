@@ -11,6 +11,12 @@ public:
     static GpuScene build_and_upload(const std::string& scene_name = "cornell") {
         if (scene_name == "ggx" || scene_name == "hdr")
             return build_ggx_spheres(scene_name);
+        if (scene_name == "furnace")
+            return build_furnace(scene_name);
+        if (scene_name == "glass")
+            return build_glass(scene_name);
+        if (scene_name == "caustics")
+            return build_caustics(scene_name);
         return build_cornell(scene_name);
     }
 
@@ -29,6 +35,10 @@ private:
         GpuMaterial mat{};
         mat.type = MatType::GGX; mat.albedo = albedo;
         mat.roughness = roughness; mat.metallic = metallic;
+        m.push_back(mat); return (int)m.size()-1;
+    }
+    static int add_dielectric(std::vector<GpuMaterial>& m, float ir) {
+        GpuMaterial mat{}; mat.type = MatType::DIELECTRIC; mat.ir = ir;
         m.push_back(mat); return (int)m.size()-1;
     }
 
@@ -95,8 +105,16 @@ private:
         scene.n_lights    = (int)lids.size();
         upload(mats, &scene.d_materials, scene.n_materials);
         upload(hits, &scene.d_hittables, scene.n_hittables);
-        if (!lids.empty())
+
+        if (!lids.empty()) {
             upload(lids, &scene.d_light_ids, scene.n_lights);
+        } else {
+            int dummy = -1;
+            cudaMalloc(&scene.d_light_ids, sizeof(int));
+            cudaMemcpy(scene.d_light_ids, &dummy, sizeof(int),
+                       cudaMemcpyHostToDevice);
+        }
+
         printf("[SceneUploader:%s] mats=%d hittables=%d lights=%d\n",
                name.c_str(), scene.n_materials, scene.n_hittables, scene.n_lights);
         return scene;
@@ -136,13 +154,11 @@ private:
         int floor_id = add_lambertian(mats, vec3(0.4f, 0.4f, 0.4f));
 
         if (name == "ggx") {
-            // Rect light for GGX scene
             int light_id = add_light(mats, vec3(12.f, 12.f, 12.f));
             int lid = (int)hits.size();
             add_xz_rect(hits, -6, 6, -2, 2, 5.0f, light_id, true);
             lids.push_back(lid);
         } else {
-            // HDR scene: wide dim ambient light simulates env map on GPU
             int light_id = add_light(mats, vec3(3.f, 3.5f, 4.f));
             int lid = (int)hits.size();
             add_xz_rect(hits, -20, 20, -20, 20, 8.0f, light_id, true);
@@ -160,6 +176,71 @@ private:
             add_sphere(hits, vec3(x,  1.1f, 0), 0.9f, m_id);
             add_sphere(hits, vec3(x, -0.55f, 0), 0.9f, d_id);
         }
+
+        return finalise(mats, hits, lids, name);
+    }
+
+    static GpuScene build_furnace(const std::string& name) {
+        std::vector<GpuMaterial> mats;
+        std::vector<GpuHittable> hits;
+        std::vector<int>         lids;
+
+        int sphere_id = add_lambertian(mats, vec3(0.5f, 0.5f, 0.5f));
+        add_sphere(hits, vec3(0,0,0), 1.f, sphere_id);
+
+        return finalise(mats, hits, lids, name);
+    }
+
+    static GpuScene build_glass(const std::string& name) {
+        std::vector<GpuMaterial> mats;
+        std::vector<GpuHittable> hits;
+        std::vector<int>         lids;
+
+        int floor_id    = add_lambertian(mats, vec3(0.1f, 0.1f, 0.12f));
+        int backdrop_id = add_lambertian(mats, vec3(0.08f,0.25f,0.6f));
+        int light_id    = add_light(mats, vec3(8.f, 7.f, 6.f));
+
+        int lid = (int)hits.size();
+        add_xz_rect(hits, -8, 8, -3, 3, 6.0f, light_id, true);
+        lids.push_back(lid);
+
+        add_xz_rect(hits, -10, 10, -6, 6, -1.1f, floor_id, false);
+        add_sphere(hits, vec3(0, 3, -5), 4.0f, backdrop_id);
+
+        float ior_steps[] = { 1.2f, 1.35f, 1.5f, 1.65f, 1.8f };
+        for (int i = 0; i < 5; ++i) {
+            int glass_id = add_dielectric(mats, ior_steps[i]);
+            float x = (i - 2) * 2.8f;
+            add_sphere(hits, vec3(x, 0.0f, 0), 1.0f, glass_id);
+        }
+
+        return finalise(mats, hits, lids, name);
+    }
+
+    static GpuScene build_caustics(const std::string& name) {
+        std::vector<GpuMaterial> mats;
+        std::vector<GpuHittable> hits;
+        std::vector<int>         lids;
+
+        int red_id   = add_lambertian(mats, vec3(0.65f,0.05f,0.05f));
+        int white_id = add_lambertian(mats, vec3(0.73f,0.73f,0.73f));
+        int green_id = add_lambertian(mats, vec3(0.12f,0.45f,0.15f));
+        int light_id = add_light(mats, vec3(30.f, 25.f, 20.f));
+        int glass_id = add_dielectric(mats, 1.5f);
+        int gold_id  = add_ggx(mats, vec3(0.9f,0.7f,0.1f), 0.3f, 0.8f);
+
+        add_yz_rect(hits, 0,555, 0,555, 555, green_id, true );
+        add_yz_rect(hits, 0,555, 0,555, 0,   red_id,   false);
+        add_xz_rect(hits, 0,555, 0,555, 0,   white_id, false);
+        add_xz_rect(hits, 0,555, 0,555, 555, white_id, true );
+        add_xy_rect(hits, 0,555, 0,555, 555, white_id, true );
+
+        int lid = (int)hits.size();
+        add_xz_rect(hits, 213,343, 227,332, 554, light_id, true);
+        lids.push_back(lid);
+
+        add_sphere(hits, vec3(278,180,278), 120.f, glass_id);
+        add_sphere(hits, vec3(150,100,150),  80.f, gold_id);
 
         return finalise(mats, hits, lids, name);
     }
