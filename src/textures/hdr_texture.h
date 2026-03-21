@@ -2,9 +2,6 @@
 
 #include "core/rtweekend.h"
 #include "textures/texture.h"
-
-#define STBI_HDR_LOADING_IS_HDR
-#define STB_IMAGE_IMPLEMENTATION
 #include "external/stb_image.h"
 
 class hdr_texture : public texture {

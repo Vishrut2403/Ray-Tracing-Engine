@@ -12,6 +12,7 @@ set(CMAKE_CUDA_ARCHITECTURES 86)
 
 # ── CPU sources (all .cpp) ──────────────────────────────────────────────────
 file(GLOB_RECURSE CPU_SRC CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cpp)
+list(FILTER CPU_SRC EXCLUDE REGEX ".*intellisense\\.cpp$")
 
 # ── GPU sources (all .cu) ───────────────────────────────────────────────────
 file(GLOB_RECURSE CUDA_SRC CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cu)
