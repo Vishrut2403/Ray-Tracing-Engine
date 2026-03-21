@@ -8,7 +8,7 @@
 #include "cuda/gpu_material.cuh"
 #include "cuda/cuda_rand.cuh"
 
-constexpr double GPU_PI = 3.1415926535897932385;
+// GPU_PI defined in gpu_material.cuh — do not redefine here
 
 __device__ inline double gpu_power_heuristic(double a, double b) {
     double a2 = a*a, b2 = b*b;
@@ -19,15 +19,13 @@ __device__ inline double gpu_light_pdf(const GpuHittable* hittables,
                                         const int* light_ids, int n_lights,
                                         const vec3& origin, const vec3& dir) {
     if (n_lights == 0) return 0.0;
-    double sum = 0.0;
-    double w   = 1.0 / n_lights;
+    double sum = 0.0, w = 1.0 / n_lights;
     for (int i = 0; i < n_lights; ++i) {
         const GpuHittable& lh = hittables[light_ids[i]];
         GpuHitRecord tmp;
         ray test_ray(origin, dir, 0.0);
         ray local = (lh.has_rotation || lh.translate_offset.length_squared() > 0.0)
-                    ? apply_inverse_transform(test_ray, lh)
-                    : test_ray;
+                    ? apply_inverse_transform(test_ray, lh) : test_ray;
         if (hit_xz_rect(lh, local, interval(0.001, 1e30), tmp)) {
             double area  = (double)(lh.a1-lh.a0) * (double)(lh.b1-lh.b0);
             double dist2 = tmp.t * tmp.t * dir.length_squared();
@@ -42,14 +40,12 @@ __device__ inline vec3 gpu_light_random(const GpuHittable* hittables,
                                          const int* light_ids, int n_lights,
                                          const vec3& origin, curandState* rng) {
     if (n_lights == 0) return vec3(1,0,0);
-    int idx = (int)(rand_double(rng) * n_lights);
-    idx = min(idx, n_lights-1);
+    int idx = min((int)(rand_double(rng) * n_lights), n_lights-1);
     const GpuHittable& lh = hittables[light_ids[idx]];
     double rx = (double)lh.a0 + rand_double(rng) * (double)(lh.a1-lh.a0);
     double rz = (double)lh.b0 + rand_double(rng) * (double)(lh.b1-lh.b0);
     vec3 pt(rx, (double)lh.k, rz);
-    pt = pt + lh.translate_offset;
-    return pt - origin;
+    return pt + lh.translate_offset - origin;
 }
 
 __device__ vec3 gpu_Li(const ray& initial_ray,
@@ -66,7 +62,6 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
     double last_bsdf_pdf  = 0.0;
 
     for (int depth = 0; depth < max_depth; ++depth) {
-
         GpuHitRecord rec;
         if (!hit_scene(hittables, n_hittables, r, interval(0.001, 1e30), rec)) {
             if (specular_bounce || n_lights == 0) {
@@ -80,7 +75,6 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
         }
 
         const GpuMaterial& mat = materials[rec.mat_id];
-
         vec3 emitted = gpu_emitted(mat, rec.front_face);
         if (emitted.length_squared() > 0.0) {
             if (specular_bounce) {
@@ -144,16 +138,11 @@ __device__ vec3 gpu_Li(const ray& initial_ray,
 
         r = ray(rec.p, bs.wi, r.time());
     }
-
     return L;
 }
 
 struct GpuCamera {
-    vec3   origin;
-    vec3   lower_left;
-    vec3   horizontal;
-    vec3   vertical;
-    vec3   u, v, w;
+    vec3   origin, lower_left, horizontal, vertical, u, v, w;
     double lens_radius;
 };
 
@@ -170,19 +159,12 @@ __device__ inline ray gpu_get_ray(const GpuCamera& cam, double s, double t,
 }
 
 __global__ void render_kernel(
-    float*              framebuffer,
-    int                 width,
-    int                 height,
-    int                 spp,
-    int                 max_depth,
-    GpuCamera           cam,
-    vec3                background,
-    const GpuHittable*  hittables,
-    int                 n_hittables,
-    const GpuMaterial*  materials,
-    const int*          light_ids,
-    int                 n_lights,
-    curandState*        rand_states
+    float* framebuffer, int width, int height, int spp, int max_depth,
+    GpuCamera cam, vec3 background,
+    const GpuHittable* hittables, int n_hittables,
+    const GpuMaterial* materials,
+    const int* light_ids, int n_lights,
+    curandState* rand_states
 ) {
     int x = blockIdx.x * blockDim.x + threadIdx.x;
     int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -195,19 +177,13 @@ __global__ void render_kernel(
     for (int s = 0; s < spp; ++s) {
         double u = (x + rand_double(&rng)) / (width  - 1);
         double v = (y + rand_double(&rng)) / (height - 1);
-        ray r    = gpu_get_ray(cam, u, v, &rng);
-        pixel    = pixel + gpu_Li(r, background,
-                                   hittables, n_hittables,
-                                   materials,
-                                   light_ids, n_lights,
-                                   max_depth, &rng);
+        pixel = pixel + gpu_Li(gpu_get_ray(cam, u, v, &rng), background,
+                                hittables, n_hittables, materials,
+                                light_ids, n_lights, max_depth, &rng);
     }
-
     pixel = pixel / (double)spp;
-
-    framebuffer[id*3 + 0] = (float)pixel.x();
-    framebuffer[id*3 + 1] = (float)pixel.y();
-    framebuffer[id*3 + 2] = (float)pixel.z();
-
+    framebuffer[id*3+0] = (float)pixel.x();
+    framebuffer[id*3+1] = (float)pixel.y();
+    framebuffer[id*3+2] = (float)pixel.z();
     rand_states[id] = rng;
 }
