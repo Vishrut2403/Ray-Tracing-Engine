@@ -35,36 +35,61 @@ public:
         , mat(m) {}
 
     virtual bool hit(const ray& r, const interval& ray_t,
-                     hit_record& rec) const override {
-        const double eps = 1e-8;
-        vec3 e1 = v1 - v0, e2 = v2 - v0;
-        vec3 h  = cross(r.direction(), e2);
-        double a = dot(e1, h);
-        if (std::abs(a) < eps) return false;
+                        hit_record& rec) const override {
+            const double eps = 1e-8;
+            vec3 e1 = v1 - v0, e2 = v2 - v0;
+            vec3 h  = cross(r.direction(), e2);
+            double a = dot(e1, h);
+            if (std::abs(a) < eps) return false;
 
-        double f = 1.0 / a;
-        vec3   s = r.origin() - v0;
-        double u = f * dot(s, h);
-        if (u < 0.0 || u > 1.0) return false;
+            double f = 1.0 / a;
+            vec3   s = r.origin() - v0;
+            double u = f * dot(s, h);
+            if (u < 0.0 || u > 1.0) return false;
 
-        vec3   q = cross(s, e1);
-        double v = f * dot(r.direction(), q);
-        if (v < 0.0 || u + v > 1.0) return false;
+            vec3   q = cross(s, e1);
+            double v = f * dot(r.direction(), q);
+            if (v < 0.0 || u + v > 1.0) return false;
 
-        double t = f * dot(e2, q);
-        if (!ray_t.surrounds(t)) return false;
+            double t = f * dot(e2, q);
+            if (!ray_t.surrounds(t)) return false;
 
-        double w = 1.0 - u - v;
-        vec3 smooth_n = unit_vector(n0*w + n1*u + n2*v);
+            double w = 1.0 - u - v;
 
-        rec.t       = t;
-        rec.p       = r.at(t);
-        rec.mat_ptr = mat;
-        rec.u       = uv0.u*w + uv1.u*u + uv2.u*v;
-        rec.v       = uv0.v*w + uv1.v*u + uv2.v*v;
-        rec.set_face_normal(r, smooth_n);
-        return true;
-    }
+            // Interpolate smooth normal and UV
+            vec3 smooth_n = unit_vector(n0*w + n1*u + n2*v);
+            rec.u = uv0.u*w + uv1.u*u + uv2.u*v;
+            rec.v = uv0.v*w + uv1.v*u + uv2.v*v;
+
+            // Compute tangent from UV gradients (Lengyel 2001)
+            double du1 = uv1.u - uv0.u, du2 = uv2.u - uv0.u;
+            double dv1 = uv1.v - uv0.v, dv2 = uv2.v - uv0.v;
+            double det = du1*dv2 - du2*dv1;
+
+            vec3 tangent, bitangent;
+            if (std::abs(det) > 1e-8) {
+                double inv = 1.0 / det;
+                tangent   = unit_vector((e1*dv2 - e2*dv1) * inv);
+                bitangent = unit_vector((e2*du1 - e1*du2) * inv);
+            } else {
+                // Degenerate UV — build arbitrary TBN from normal
+                onb uvw; uvw.build_from_w(smooth_n);
+                tangent   = uvw.u();
+                bitangent = uvw.v();
+            }
+
+            // Gram-Schmidt orthogonalise tangent against normal
+            tangent   = unit_vector(tangent - smooth_n * dot(smooth_n, tangent));
+            bitangent = cross(smooth_n, tangent);
+
+            rec.t         = t;
+            rec.p         = r.at(t);
+            rec.mat_ptr   = mat;
+            rec.tangent   = tangent;
+            rec.bitangent = bitangent;
+            rec.set_face_normal(r, smooth_n);
+            return true;
+        }
 
     virtual bool bounding_box(double, double, aabb& out) const override {
         point3 lo(fmin(fmin(v0.x(),v1.x()),v2.x()) - 1e-4,
@@ -83,10 +108,12 @@ public:
     std::shared_ptr<texture> albedo_tex;
     std::shared_ptr<texture> metal_rough_tex;
     std::shared_ptr<texture> emissive_tex;
+    std::shared_ptr<texture> normal_tex;      // tangent-space normal map
     color  base_color_factor = color(1,1,1);
     double metallic_factor   = 1.0;
     double roughness_factor  = 1.0;
     color  emissive_factor   = color(0,0,0);
+    double normal_scale      = 1.0;           // normal map strength
 
     virtual color emitted(const ray&, const hit_record& rec,
                            double u, double v, const point3& p) const override {
@@ -98,26 +125,50 @@ public:
 
     virtual BSDFSample sample(const ray& wo,
                                const hit_record& rec) const override {
+        hit_record perturbed = perturb_normal(rec);
         ggx delegate(resolved_albedo(rec), resolved_roughness(rec),
                      resolved_metallic(rec));
-        return delegate.sample(wo, rec);
+        return delegate.sample(wo, perturbed);
     }
 
     virtual color f(const ray& wo, const vec3& wi,
                     const hit_record& rec) const override {
+        hit_record perturbed = perturb_normal(rec);
         ggx delegate(resolved_albedo(rec), resolved_roughness(rec),
                      resolved_metallic(rec));
-        return delegate.f(wo, wi, rec);
+        return delegate.f(wo, wi, perturbed);
     }
 
     virtual double pdf(const ray& wo, const vec3& wi,
                        const hit_record& rec) const override {
+        hit_record perturbed = perturb_normal(rec);
         ggx delegate(resolved_albedo(rec), resolved_roughness(rec),
                      resolved_metallic(rec));
-        return delegate.pdf(wo, wi, rec);
+        return delegate.pdf(wo, wi, perturbed);
     }
 
 private:
+    hit_record perturb_normal(const hit_record& rec) const {
+        if (!normal_tex) return rec;
+
+        color ns = normal_tex->value(rec.u, rec.v, rec.p);
+        double nx = (ns.x() * 2.0 - 1.0) * normal_scale;
+        double ny = (ns.y() * 2.0 - 1.0) * normal_scale;
+        double nz =  ns.z() * 2.0 - 1.0; 
+
+        vec3 n_world = unit_vector(
+            rec.tangent   * nx +
+            rec.bitangent * ny +
+            rec.normal    * nz
+        );
+
+        if (dot(n_world, rec.normal) < 0.0) n_world = -n_world;
+
+        hit_record perturbed = rec;
+        perturbed.normal = n_world;
+        return perturbed;
+    }
+
     color resolved_albedo(const hit_record& rec) const {
         color alb = base_color_factor;
         if (albedo_tex) alb = alb * albedo_tex->value(rec.u, rec.v, rec.p);
@@ -239,6 +290,10 @@ inline std::shared_ptr<hittable> load_gltf(
                                         gm.emissiveFactor[1],
                                         gm.emissiveFactor[2]);
         m->emissive_tex = get_tex(gm.emissiveTexture.index);
+                if (!gm.normalTexture.extensions.empty() ||
+                    gm.normalTexture.scale != 0.0)
+                    m->normal_scale = gm.normalTexture.scale > 0.0
+                                    ? gm.normalTexture.scale : 1.0;
         mats.push_back(m);
         std::cerr << "[glTF] material: " << gm.name << "\n";
     }
