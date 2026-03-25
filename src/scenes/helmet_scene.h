@@ -25,7 +25,7 @@ inline Scene build_helmet_scene(
     auto floor_mat = std::make_shared<lambertian>(color(0.05, 0.05, 0.05));
     world.add(std::make_shared<xz_rect>(-5, 5, -5, 5, -1.2, floor_mat));
 
-    auto helmet = load_gltf(gltf_path, 1.0, vec3(0, 0, 0));
+    auto helmet = load_gltf(gltf_path, 1.0, vec3(0, 0.2, 0));
     if (helmet) {
         world.add(helmet);
     } else {
