@@ -6,6 +6,7 @@
 #include "render/ppm_renderer.h"
 #include "render/framebuffer.h"
 #include "io/image_writer.h"
+#include "io/denoiser.h"
 #include "viewer/preview_window.h"
 #include "cuda/cuda_renderer.h"
 
@@ -40,6 +41,7 @@ int main(int argc, char** argv)
     bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
     bool no_preview      = has_flag(argc, argv, "--no-preview");
     bool use_ppm         = (config.feature == "ppm");
+    bool use_denoise     = has_flag(argc, argv, "--denoise");
 
     if (config.feature == "furnace")
         apply_furnace_preset(config);
@@ -50,11 +52,11 @@ int main(int argc, char** argv)
 
     if (use_ppm) {
         PPMRenderer ppm(
-            config.samples,      // iterations
-            500000,              // photons per iteration
-            config.max_depth,    // max depth
-            15.0,                // initial radius (tune for scene scale)
-            0.7                  // alpha
+            config.samples,
+            1000000,
+            config.max_depth,
+            50.0,
+            0.7
         );
         ppm.render(scene, fb, cam, config.background);
 
@@ -93,6 +95,10 @@ int main(int argc, char** argv)
             }
             render_thread.join();
         }
+    }
+
+    if (use_denoise) {
+        OIDNDenoiser::denoise(fb, use_gpu);
     }
 
     if (ends_with(config.output_path, ".exr"))
