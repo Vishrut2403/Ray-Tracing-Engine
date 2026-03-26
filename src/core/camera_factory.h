@@ -38,10 +38,10 @@ public:
 
         if (config.feature == "helmet")
             return camera(
-                point3(0.0, 1.2, 3.5),
-                point3(0.0, 0.2, 0.0),  
-                vec3(0, 1, 0),
-                40.0,
+                point3(0.0, 4.0, 0.5),
+                point3(0.0, 0.0, 0.0),  
+                vec3(0, 0, -1),
+                45.0,
                 double(config.width)/config.height,
                 0.0, 4.0, 0.0, 1.0
             );

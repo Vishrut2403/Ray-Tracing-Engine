@@ -109,6 +109,7 @@ public:
     std::shared_ptr<texture> metal_rough_tex;
     std::shared_ptr<texture> emissive_tex;
     std::shared_ptr<texture> normal_tex;      // tangent-space normal map
+    std::shared_ptr<texture> ao_tex;             // ambient occlusion (R channel)
     color  base_color_factor = color(1,1,1);
     double metallic_factor   = 1.0;
     double roughness_factor  = 1.0;
@@ -172,6 +173,10 @@ private:
     color resolved_albedo(const hit_record& rec) const {
         color alb = base_color_factor;
         if (albedo_tex) alb = alb * albedo_tex->value(rec.u, rec.v, rec.p);
+        if (ao_tex) {
+            double ao = ao_tex->value(rec.u, rec.v, rec.p).x();
+            alb = alb * ao;
+        }
         return alb;
     }
     double resolved_roughness(const hit_record& rec) const {
@@ -290,6 +295,7 @@ inline std::shared_ptr<hittable> load_gltf(
                                         gm.emissiveFactor[1],
                                         gm.emissiveFactor[2]);
         m->emissive_tex = get_tex(gm.emissiveTexture.index);
+        m->ao_tex = get_tex(gm.occlusionTexture.index);
                 if (!gm.normalTexture.extensions.empty() ||
                     gm.normalTexture.scale != 0.0)
                     m->normal_scale = gm.normalTexture.scale > 0.0
