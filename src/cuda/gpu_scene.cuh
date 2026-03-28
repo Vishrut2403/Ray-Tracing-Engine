@@ -54,6 +54,15 @@ struct GpuBVHNode {
 
 struct GpuEnvMap;
 
+
+struct GpuMedium {
+    vec3  sigma_s;   
+    vec3  sigma_a;   
+    vec3  sigma_t;   
+    float g;
+    bool  active;    
+};
+
 struct GpuScene {
     GpuMaterial*    d_materials    = nullptr;
     GpuHittable*    d_hittables    = nullptr;
@@ -72,6 +81,8 @@ struct GpuScene {
 
     GpuEnvMap*      d_env_map      = nullptr;
     bool            has_env_map    = false;
+
+    GpuMedium       medium         = {{}, {}, {}, 0.0f, false};
 
     void free_device();
 };

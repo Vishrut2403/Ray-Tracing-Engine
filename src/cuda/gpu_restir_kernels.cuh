@@ -2,13 +2,11 @@
 
 #include "cuda/gpu_restir.cuh"
 #include "cuda/gpu_integrator.cuh"
+#include "cuda/gpu_volume.cuh"
 #define RAY_OFFSET 0.02
 
 #define TEMPORAL_M_CAP 20
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 0: G-Buffer fill + initial RIS sampling
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_initial_kernel(
     int W, int H,
     GpuCamera cam,
@@ -77,9 +75,6 @@ __global__ void restir_initial_kernel(
     rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 1: Temporal reuse
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_temporal_kernel(
     int W, int H,
     const GpuMaterial*   materials,
@@ -102,7 +97,7 @@ __global__ void restir_temporal_kernel(
     const GBufferPixel& gbuf = gbuffer_cur[idx];
 
     if (has_prev_frame && gbuf.valid) {
-        int prev_idx = idx;  // static camera — same pixel = same surface
+        int prev_idx = idx;
 
         const GBufferPixel& pbuf = gbuffer_prev[prev_idx];
         const Reservoir&    prev = res_prev[prev_idx];
@@ -120,13 +115,11 @@ __global__ void restir_temporal_kernel(
 
         if (valid_temporal) {
             Reservoir prev_capped = prev;
-            prev_capped.cap_M(TEMPORAL_M_CAP);  // fixed cap, not relative
+            prev_capped.cap_M(TEMPORAL_M_CAP);
 
-            // Full BRDF-weighted p_hat — consistent with spatial pass
             float ph = eval_p_hat(prev_capped.y, gbuf, materials);
             combined.merge(prev_capped, ph, &rng);
 
-            // Recompute W after merge
             if (combined.M > 0 && combined.y.light_id >= 0) {
                 float ph2 = eval_p_hat(combined.y, gbuf, materials);
                 combined.W = (ph2 > 1e-10f)
@@ -140,9 +133,6 @@ __global__ void restir_temporal_kernel(
     rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 2: Spatial reuse
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_spatial_kernel(
     int W, int H,
     const GpuHittable*   hittables,  int n_hittables,
@@ -206,9 +196,6 @@ __global__ void restir_spatial_kernel(
     rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Pass 3: Final shading
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_shade_kernel(
     int W, int H,
     float* d_accum,
@@ -224,7 +211,8 @@ __global__ void restir_shade_kernel(
     const Reservoir*    reservoirs,
     curandState*        rng_states,
     int max_depth,
-    const GpuEnvMap*    env_map
+    const GpuEnvMap*    env_map,
+    GpuMedium           medium     
 ) {
     int x = blockIdx.x*blockDim.x + threadIdx.x;
     int y = blockIdx.y*blockDim.y + threadIdx.y;
@@ -237,9 +225,12 @@ __global__ void restir_shade_kernel(
     const GBufferPixel& gbuf = gbuffer[idx];
 
     if (gbuf.is_emitter) {
-        d_accum[idx*3+0] += (float)gbuf.Le.x();
-        d_accum[idx*3+1] += (float)gbuf.Le.y();
-        d_accum[idx*3+2] += (float)gbuf.Le.z();
+        vec3 emit = gbuf.Le;
+        if (medium.active)
+            emit = emit * transmittance(medium, (double)gbuf.depth);
+        d_accum[idx*3+0] += (float)emit.x();
+        d_accum[idx*3+1] += (float)emit.y();
+        d_accum[idx*3+2] += (float)emit.z();
         rng_states[idx] = rng;
         return;
     }
@@ -252,9 +243,14 @@ __global__ void restir_shade_kernel(
             L = gpu_env_Le(*env_map, r.direction());
         else
             L = background;
+
     } else {
         const GpuMaterial& mat = materials[gbuf.mat_id];
-        const Reservoir& res = reservoirs[idx];
+        const Reservoir&   res = reservoirs[idx];
+
+        vec3 tr_primary = medium.active
+            ? transmittance(medium, (double)gbuf.depth)
+            : vec3(1,1,1);
 
         if (res.y.light_id >= 0 && res.W > 0.0f) {
             vec3  d    = res.y.pos - gbuf.pos;
@@ -268,7 +264,13 @@ __global__ void restir_shade_kernel(
                     float cos_i = (float)fabs(dot(gbuf.normal, wi));
                     float cos_l = (float)fabs(dot(res.y.normal, -(wi)));
                     float G     = cos_i * cos_l / (dist * dist);
-                    L = L + f * res.y.Le * (double)(G * res.W);
+
+                    vec3 tr_shadow = medium.active
+                        ? transmittance(medium, (double)dist)
+                        : vec3(1,1,1);
+
+                    L = L + tr_primary * tr_shadow
+                          * f * res.y.Le * (double)(G * res.W);
                 }
             }
         }
@@ -287,15 +289,63 @@ __global__ void restir_shade_kernel(
 
         if (bs.pdf > 0.0) {
             double cos_t = fabs(dot(gbuf.normal, bs.wi));
-            vec3   beta  = bs.is_delta
-                           ? bs.f
-                           : bs.f * cos_t / bs.pdf;
+            vec3 beta = bs.is_delta
+                        ? bs.f
+                        : bs.f * cos_t / bs.pdf;
+            beta = beta * tr_primary;
 
+            ray indirect_ray(gbuf.pos, bs.wi, 0.0);
             GpuHitRecord irec;
-            if (hit_scene(hittables, n_hittables,
-                          ray(gbuf.pos, bs.wi, 0.0),
-                          interval(RAY_OFFSET, 1e30), irec,
-                          tris, tri_bvh, tri_root, n_tris)) {
+            bool hit_surface = hit_scene(hittables, n_hittables,
+                                         indirect_ray,
+                                         interval(RAY_OFFSET, 1e30), irec,
+                                         tris, tri_bvh, tri_root, n_tris);
+            double t_surface = hit_surface ? irec.t : 1e30;
+
+            MediumSample ms = sample_medium(medium, indirect_ray,
+                                            t_surface, &rng);
+            beta = beta * ms.weight;
+
+            if (ms.scattered) {
+                if (n_lights > 0) {
+                    vec3 to_l = gpu_light_random(hittables, light_ids,
+                                                  n_lights, ms.pos, &rng);
+                    double dl = to_l.length();
+                    if (dl > 1e-6) {
+                        vec3 wl = to_l / dl;
+                        double lpdf = gpu_light_pdf(hittables, light_ids,
+                                                     n_lights, ms.pos, wl);
+                        if (lpdf > 0.0) {
+                            GpuHitRecord sr;
+                            bool occ = hit_scene(hittables, n_hittables,
+                                ray(ms.pos, wl, 0.0),
+                                interval(RAY_OFFSET, dl - RAY_OFFSET),
+                                sr, tris, tri_bvh, tri_root, n_tris);
+                            if (!occ) {
+                                GpuHitRecord lr;
+                                if (hit_scene(hittables, n_hittables,
+                                    ray(ms.pos, wl, 0.0),
+                                    interval(RAY_OFFSET, 1e30), lr,
+                                    tris, tri_bvh, tri_root, n_tris)) {
+                                    vec3 lLe = gpu_emitted(
+                                        materials[lr.mat_id], lr.front_face);
+                                    if (lLe.length_squared() > 0.0) {
+                                        float cos_s = (float)dot(
+                                            unit_vector(ms.wi),
+                                            unit_vector(wl));
+                                        float phase = hg_phase(cos_s, medium.g);
+                                        vec3 tr_light = medium.active
+                                            ? transmittance(medium, dl)
+                                            : vec3(1,1,1);
+                                        L = L + beta * lLe * tr_light
+                                                  * (double)(phase / (float)lpdf);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            } else if (hit_surface) {
                 vec3 iLe = gpu_emitted(materials[irec.mat_id], irec.front_face);
                 if (iLe.length_squared() > 0.0) {
                     L = L + beta * iLe;
@@ -311,7 +361,7 @@ __global__ void restir_shade_kernel(
                             GpuHitRecord sr;
                             bool occ = hit_scene(hittables, n_hittables,
                                 ray(irec.p, wl, 0.0),
-                                interval(RAY_OFFSET, dl-RAY_OFFSET),
+                                interval(RAY_OFFSET, dl - RAY_OFFSET),
                                 sr, tris, tri_bvh, tri_root, n_tris);
                             if (!occ) {
                                 GpuHitRecord lr;
@@ -325,7 +375,11 @@ __global__ void restir_shade_kernel(
                                         vec3   if_ = gpu_f(materials[irec.mat_id],
                                                             wl, irec.normal);
                                         double ct2 = fabs(dot(irec.normal, wl));
-                                        L = L + beta * if_ * lLe * (ct2/lpdf);
+                                        vec3 tr_light = medium.active
+                                            ? transmittance(medium, dl)
+                                            : vec3(1,1,1);
+                                        L = L + beta * if_ * lLe
+                                                  * tr_light * (ct2/lpdf);
                                     }
                                 }
                             }

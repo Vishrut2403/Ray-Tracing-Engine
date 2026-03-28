@@ -12,9 +12,6 @@
 #define RAY_OFFSET 0.02
 #endif
 
-// ─────────────────────────────────────────────────────────────────────────────
-// LightSample
-// ─────────────────────────────────────────────────────────────────────────────
 struct LightSample {
     vec3  pos;
     vec3  normal;
@@ -23,9 +20,6 @@ struct LightSample {
     int   light_id;
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Reservoir
-// ─────────────────────────────────────────────────────────────────────────────
 struct Reservoir {
     LightSample y;
     float w_sum;
@@ -58,20 +52,14 @@ struct Reservoir {
         return sel;
     }
 
-    // Clamp M to prevent temporal reservoirs from dominating forever.
-    // Call this on the previous frame's reservoir before merging.
     __device__ void cap_M(int max_M) {
         if (M > max_M) {
-            // Scale w_sum proportionally so W stays consistent
             w_sum *= (float)max_M / (float)M;
             M = max_M;
         }
     }
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// GBufferPixel
-// ─────────────────────────────────────────────────────────────────────────────
 struct GBufferPixel {
     vec3  pos;
     vec3  normal;
@@ -82,10 +70,6 @@ struct GBufferPixel {
     bool  valid;
     bool  is_emitter;
 };
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Device helpers
-// ─────────────────────────────────────────────────────────────────────────────
 
 __device__ inline LightSample sample_light(
     const GpuHittable* hittables,
@@ -121,7 +105,7 @@ __device__ inline LightSample sample_light(
 __device__ inline float eval_p_hat(
     const LightSample& ls,
     const GBufferPixel& gbuf,
-    const GpuMaterial* materials   // can be nullptr → geometry-only p_hat
+    const GpuMaterial* materials
 ) {
     if (ls.light_id < 0 || !gbuf.valid) return 0.0f;
     vec3  d    = ls.pos - gbuf.pos;

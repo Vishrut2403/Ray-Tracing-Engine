@@ -59,7 +59,6 @@ void cuda_render(const Scene& scene,
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
-    // ── RNG ──────────────────────────────────────────────────────────────────
     curandState* d_states;
     cudaMalloc(&d_states, N * sizeof(curandState));
     {
@@ -68,18 +67,16 @@ void cuda_render(const Scene& scene,
         cudaStreamSynchronize(stream);
     }
 
-    // ── Accumulation buffer ───────────────────────────────────────────────────
     float* d_accum;
     cudaMalloc(&d_accum, N * 3 * sizeof(float));
     cudaMemsetAsync(d_accum, 0, N*3*sizeof(float), stream);
 
-    // ── ReSTIR buffers ────────────────────────────────────────────────────────
     GBufferPixel* d_gbuffer_cur;
-    GBufferPixel* d_gbuffer_prev;   // ← new: previous frame G-buffer
-    Reservoir*    d_res_initial;    // Pass 0 output
-    Reservoir*    d_res_temporal;   // Pass 1 output  ← new
-    Reservoir*    d_res_spatial;    // Pass 2 output (was d_reservoirs_b)
-    Reservoir*    d_res_prev;       // previous frame final reservoirs  ← new
+    GBufferPixel* d_gbuffer_prev;
+    Reservoir*    d_res_initial;    
+    Reservoir*    d_res_temporal; 
+    Reservoir*    d_res_spatial;   
+    Reservoir*    d_res_prev; 
 
     cudaMalloc(&d_gbuffer_cur,  N * sizeof(GBufferPixel));
     cudaMalloc(&d_gbuffer_prev, N * sizeof(GBufferPixel));
@@ -153,12 +150,12 @@ void cuda_render(const Scene& scene,
             gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
             gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
             d_gbuffer_cur, d_res_spatial,
-            d_states, max_depth, d_env_map
+            d_states, max_depth, d_env_map,
+            gpu_scene.medium 
         );
 
         cudaStreamSynchronize(stream);
 
-        // ── Swap: current frame becomes previous for next frame ───────────────
         // G-buffer swap
         GBufferPixel* tmp_g = d_gbuffer_prev;
         d_gbuffer_prev      = d_gbuffer_cur;

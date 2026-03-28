@@ -18,6 +18,8 @@ public:
             return build_glass(scene_name);
         if (scene_name == "caustics")
             return build_caustics(scene_name);
+        if (scene_name == "volume")
+            return build_cornell_volume(scene_name);
         return build_cornell(scene_name);
     }
 
@@ -268,5 +270,42 @@ private:
         add_sphere(hits, vec3(150,100,150),  80.f, gold_id);
 
         return finalise(mats, hits, lids, name);
+    }
+
+    static GpuScene build_cornell_volume(const std::string& name) {
+        std::vector<GpuMaterial> mats;
+        std::vector<GpuHittable> hits;
+        std::vector<int>         lids;
+
+        int red_id   = add_lambertian(mats, vec3(0.65f,0.05f,0.05f));
+        int white_id = add_lambertian(mats, vec3(0.73f,0.73f,0.73f));
+        int green_id = add_lambertian(mats, vec3(0.12f,0.45f,0.15f));
+        int light_id = add_light(mats, vec3(30.f, 28.f, 25.f));
+
+        add_yz_rect(hits, 0,555, 0,555, 555, green_id, true );
+        add_yz_rect(hits, 0,555, 0,555, 0,   red_id,   false);
+        add_xz_rect(hits, 0,555, 0,555, 0,   white_id, false);
+        add_xz_rect(hits, 0,555, 0,555, 555, white_id, true );
+        add_xy_rect(hits, 0,555, 0,555, 555, white_id, true );
+
+        int lid = (int)hits.size();
+        add_xz_rect(hits, 213, 343, 227, 332, 554, light_id, true);
+        lids.push_back(lid);
+
+        add_box(hits, vec3(0,0,0), vec3(165,330,165), white_id,  15.f, vec3(265,0,295));
+        add_box(hits, vec3(0,0,0), vec3(165,165,165), white_id, -18.f, vec3(130,0,65 ));
+
+        GpuScene scene = finalise(mats, hits, lids, name);
+
+        float density    = 0.003f;  
+        float sigma_s_v  = density * 0.9f;
+        float sigma_a_v  = density * 0.1f;
+        scene.medium.sigma_s = vec3(sigma_s_v, sigma_s_v, sigma_s_v);
+        scene.medium.sigma_a = vec3(sigma_a_v, sigma_a_v, sigma_a_v);
+        scene.medium.sigma_t = scene.medium.sigma_s + scene.medium.sigma_a;
+        scene.medium.g       = 0.2f;
+        scene.medium.active  = true;
+
+        return scene;
     }
 };
