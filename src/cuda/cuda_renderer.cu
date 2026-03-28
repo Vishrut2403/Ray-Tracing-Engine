@@ -1,5 +1,7 @@
 #include "cuda/cuda_renderer.h"
 #include "cuda/gpu_integrator.cuh"
+#include "cuda/gpu_restir.cuh"
+#include "cuda/gpu_restir_kernels.cuh"
 #include "cuda/gpu_env_map.cuh"
 #include "cuda/gpu_env_uploader.h"
 #include "cuda/gpu_mesh_uploader.h"
@@ -11,6 +13,7 @@
 
 #include <cstdio>
 #include <mutex>
+#include <string>
 
 void GpuScene::free_device() {
     if (d_materials) { cudaFree(d_materials); d_materials = nullptr; }
@@ -43,77 +46,134 @@ void cuda_render(const Scene& scene,
     const int H = fb.get_height();
     const int N = W * H;
 
-    GpuMesh gpu_mesh;
+    GpuMesh  gpu_mesh;
     GpuScene gpu_scene;
-
-    if (scene_name == "bunny") {
+    if (scene_name == "bunny")
         gpu_scene = SceneUploader::build_bunny_scene(scene_name, gpu_mesh);
-    } else {
+    else
         gpu_scene = SceneUploader::build_and_upload(scene_name);
-    }
 
     GpuEnvMap* d_env_map = nullptr;
-    if (scene.env) {
-        d_env_map = upload_env_map(*scene.env);
-    }
+    if (scene.env) d_env_map = upload_env_map(*scene.env);
 
     cudaStream_t stream;
     cudaStreamCreate(&stream);
 
+    // ── RNG ──────────────────────────────────────────────────────────────────
     curandState* d_states;
     cudaMalloc(&d_states, N * sizeof(curandState));
     {
-        int t = 128, b = (N+t-1)/t;
+        int t=128, b=(N+t-1)/t;
         cuda_rand_init<<<b,t,0,stream>>>(d_states, 1234ULL, N);
         cudaStreamSynchronize(stream);
     }
 
+    // ── Accumulation buffer ───────────────────────────────────────────────────
     float* d_accum;
     cudaMalloc(&d_accum, N * 3 * sizeof(float));
-    cudaMemsetAsync(d_accum, 0, N * 3 * sizeof(float), stream);
+    cudaMemsetAsync(d_accum, 0, N*3*sizeof(float), stream);
+
+    // ── ReSTIR buffers ────────────────────────────────────────────────────────
+    GBufferPixel* d_gbuffer_cur;
+    GBufferPixel* d_gbuffer_prev;   // ← new: previous frame G-buffer
+    Reservoir*    d_res_initial;    // Pass 0 output
+    Reservoir*    d_res_temporal;   // Pass 1 output  ← new
+    Reservoir*    d_res_spatial;    // Pass 2 output (was d_reservoirs_b)
+    Reservoir*    d_res_prev;       // previous frame final reservoirs  ← new
+
+    cudaMalloc(&d_gbuffer_cur,  N * sizeof(GBufferPixel));
+    cudaMalloc(&d_gbuffer_prev, N * sizeof(GBufferPixel));
+    cudaMalloc(&d_res_initial,  N * sizeof(Reservoir));
+    cudaMalloc(&d_res_temporal, N * sizeof(Reservoir));
+    cudaMalloc(&d_res_spatial,  N * sizeof(Reservoir));
+    cudaMalloc(&d_res_prev,     N * sizeof(Reservoir));
+
+    // Zero prev buffers so frame 0 validity checks fail cleanly
+    cudaMemsetAsync(d_gbuffer_prev, 0, N * sizeof(GBufferPixel), stream);
+    cudaMemsetAsync(d_res_prev,     0, N * sizeof(Reservoir),     stream);
 
     float* h_accum;
     cudaMallocHost(&h_accum, N * 3 * sizeof(float));
 
     GpuCamera gpu_cam = make_gpu_camera(cam);
-    dim3 threads(16, 16);
+    dim3 threads(16,16);
     dim3 blocks((W+15)/16, (H+15)/16);
 
-    const int BATCH         = 32;
-    const int PREVIEW_EVERY = 4;
-    int samples_done = 0, batch_count = 0;
+    const int M_CANDIDATES   = 32;
+    const int K_NEIGHBORS    = 5;
+    const int SPATIAL_RADIUS = 30;
+    const int PREVIEW_EVERY  = 4;
 
-    printf("[CUDA] %dx%d  spp=%d  depth=%d  scene=%s  mesh=%s  env=%s\n",
-           W, H, spp, max_depth, scene_name.c_str(),
-           gpu_scene.n_triangles > 0 ? "yes" : "no",
-           d_env_map ? "yes" : "no");
+    printf("[CUDA/ReSTIR+T] %dx%d spp=%d M=%d K=%d r=%d\n",
+           W, H, spp, M_CANDIDATES, K_NEIGHBORS, SPATIAL_RADIUS);
 
-    while (samples_done < spp) {
-        int batch = (samples_done + BATCH <= spp) ? BATCH : (spp - samples_done);
+    for (int s = 0; s < spp; ++s) {
+        bool has_prev = (s > 0);
 
-        accumulate_kernel<<<blocks, threads, 0, stream>>>(
-            d_accum, W, H, batch, max_depth, gpu_cam, background,
+        // Pass 0: G-buffer + initial RIS
+        restir_initial_kernel<<<blocks,threads,0,stream>>>(
+            W, H, gpu_cam,
             gpu_scene.d_hittables, gpu_scene.n_hittables,
             gpu_scene.d_materials,
             gpu_scene.d_light_ids, gpu_scene.n_lights,
-            d_states,
-            gpu_scene.d_triangles,
-            gpu_scene.d_tri_bvh,
-            gpu_scene.tri_bvh_root,
-            gpu_scene.n_triangles,
-            d_env_map
+            gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
+            gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
+            d_gbuffer_cur, d_res_initial, d_states,
+            M_CANDIDATES
         );
-        samples_done += batch;
-        ++batch_count;
 
-        bool do_preview = preview &&
-                          (batch_count % PREVIEW_EVERY == 0 || samples_done == spp);
+        // Pass 1: Temporal reuse (initial → temporal)
+        restir_temporal_kernel<<<blocks,threads,0,stream>>>(
+            W, H,
+            gpu_scene.d_materials,
+            d_gbuffer_cur, d_gbuffer_prev,
+            d_res_initial, d_res_prev,
+            d_res_temporal,
+            d_states, has_prev
+        );
 
-        if (do_preview) {
+        // Pass 2: Spatial reuse (temporal → spatial)
+        restir_spatial_kernel<<<blocks,threads,0,stream>>>(
+            W, H,
+            gpu_scene.d_hittables, gpu_scene.n_hittables,
+            gpu_scene.d_materials,
+            gpu_scene.d_light_ids, gpu_scene.n_lights,
+            gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
+            gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
+            d_gbuffer_cur, d_res_temporal, d_res_spatial,
+            d_states, K_NEIGHBORS, SPATIAL_RADIUS
+        );
+
+        // Pass 3: Shade
+        restir_shade_kernel<<<blocks,threads,0,stream>>>(
+            W, H, d_accum, gpu_cam, background,
+            gpu_scene.d_hittables, gpu_scene.n_hittables,
+            gpu_scene.d_materials,
+            gpu_scene.d_light_ids, gpu_scene.n_lights,
+            gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
+            gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
+            d_gbuffer_cur, d_res_spatial,
+            d_states, max_depth, d_env_map
+        );
+
+        cudaStreamSynchronize(stream);
+
+        // ── Swap: current frame becomes previous for next frame ───────────────
+        // G-buffer swap
+        GBufferPixel* tmp_g = d_gbuffer_prev;
+        d_gbuffer_prev      = d_gbuffer_cur;
+        d_gbuffer_cur       = tmp_g;
+
+        // Reservoir swap: save the post-spatial result as prev
+        Reservoir* tmp_r = d_res_prev;
+        d_res_prev       = d_res_spatial;
+        d_res_spatial    = tmp_r;
+
+        if (preview && (s % PREVIEW_EVERY == 0 || s == spp-1)) {
             cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
                             cudaMemcpyDeviceToHost, stream);
             cudaStreamSynchronize(stream);
-            float inv = 1.0f / samples_done;
+            float inv = 1.0f / (s+1);
             {
                 std::lock_guard<std::mutex> lock(fb.mtx);
                 fb.set_bulk(h_accum, inv);
@@ -123,11 +183,9 @@ void cuda_render(const Scene& scene,
                 std::lock_guard<std::mutex> lock(fb.mtx);
                 preview->update(fb.raw_data(), 1.0f);
             }
-        } else {
-            cudaStreamSynchronize(stream);
         }
 
-        printf("\r[CUDA] %d / %d spp", samples_done, spp);
+        printf("\r[CUDA/ReSTIR+T] %d / %d spp", s+1, spp);
         fflush(stdout);
     }
 
@@ -136,14 +194,20 @@ void cuda_render(const Scene& scene,
     cudaStreamSynchronize(stream);
     {
         std::lock_guard<std::mutex> lock(fb.mtx);
-        fb.set_bulk(h_accum, 1.0f / spp);
+        fb.set_bulk(h_accum, 1.0f/spp);
     }
 
-    printf("\n[CUDA] done\n");
+    printf("\n[CUDA/ReSTIR+T] done\n");
 
     cudaFreeHost(h_accum);
     cudaFree(d_accum);
     cudaFree(d_states);
+    cudaFree(d_gbuffer_cur);
+    cudaFree(d_gbuffer_prev);
+    cudaFree(d_res_initial);
+    cudaFree(d_res_temporal);
+    cudaFree(d_res_spatial);
+    cudaFree(d_res_prev);
     cudaStreamDestroy(stream);
     gpu_scene.free_device();
     gpu_mesh.free_device();

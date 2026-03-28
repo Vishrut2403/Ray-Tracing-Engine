@@ -162,7 +162,7 @@ private:
         add_xy_rect(hits, 0,555, 0,555, 555, white_id, true );
 
         int lid = (int)hits.size();
-        add_xz_rect(hits, -3, 3, -2, 2, 4.0f, light_id, true);
+        add_xz_rect(hits, 213, 343, 227, 332, 554, light_id, true);
         lids.push_back(lid);
 
         add_box(hits, vec3(0,0,0), vec3(165,330,165), white_id,  15.f, vec3(265,0,295));
