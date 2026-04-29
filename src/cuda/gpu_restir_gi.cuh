@@ -61,7 +61,7 @@ struct GIReservoir {
 	__device__ void finalize(float p_hat) {
 		if (p_hat > 1e-10f && M > 0) {
 			W = (w_sum / (float)M) / p_hat;
-			W = fminf(W, 5.0f);
+			W = fminf(W, 1.0f);  // ← clamp to 1.0, not 5.0 — prevents overweighting
 			// Do NOT touch w_sum here — leave it as the true accumulated sum
 			// so temporal reuse next frame merges correctly
 		} else {
@@ -70,9 +70,7 @@ struct GIReservoir {
 	}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GI p_hat
-// ─────────────────────────────────────────────────────────────────────────────
 __device__ inline float gi_p_hat(
 	const PathSample&   ps,
 	const GBufferPixel& gbuf,
@@ -101,9 +99,7 @@ __device__ inline float gi_p_hat(
 	return fmaxf(0.0f, lum * cos_i * brdf_w);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Reconnection Jacobian
-// ─────────────────────────────────────────────────────────────────────────────
 __device__ inline float reconnection_jacobian(
 	const PathSample& ps,
 	const vec3&       x_v_new)

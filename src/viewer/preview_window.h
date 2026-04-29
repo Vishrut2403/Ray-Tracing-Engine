@@ -8,7 +8,7 @@ public:
 
 	bool should_close() const;
 	void poll_events();
-	void update(const float* framebuffer_data, float = 1.0f);
+	void update(const float* framebuffer_data);
 
 private:
 	int width, height;

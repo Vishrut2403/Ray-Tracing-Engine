@@ -75,7 +75,7 @@ int main(int argc, char** argv)
 			while (!preview.should_close()) {
 				preview.poll_events();
 				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview.update(fb.raw_data(), 1.0f);
+				preview.update(fb.raw_data());
 			}
 			render_thread.join();
 		}
@@ -91,20 +91,20 @@ int main(int argc, char** argv)
 			while (!preview.should_close()) {
 				preview.poll_events();
 				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview.update(fb.raw_data(), 1.0f);
+				preview.update(fb.raw_data());
 			}
 			render_thread.join();
 		}
 	}
 
 	if (use_denoise) {
-		OIDNDenoiser::denoise(fb, use_gpu);
+		OIDNDenoiser::denoise(fb);
 	}
 
 	if (ends_with(config.output_path, ".exr"))
 		ImageWriter::write_exr(config.output_path, fb);
 	else
-		ImageWriter::write_ppm(config.output_path, fb, config.samples);
+		ImageWriter::write_ppm(config.output_path, fb);
 
 	return 0;
 }

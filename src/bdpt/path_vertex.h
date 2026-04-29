@@ -7,9 +7,7 @@
 #include "lights/env_light.h"
 #include <memory>
 
-// ─────────────────────────────────────────────────────────────────────────────
 // PathVertex — one vertex on a camera or light subpath
-// ─────────────────────────────────────────────────────────────────────────────
 
 enum class VertexType {
 	Camera,   // camera origin
@@ -35,8 +33,7 @@ struct PathVertex {
 
 	std::shared_ptr<material> mat;  // null for camera/light vertices
 
-	// ── Helpers ──────────────────────────────────────────────────────────────
-
+	// Helper methods
 	bool is_on_surface() const { return type == VertexType::Surface; }
 	bool is_light()      const { return type == VertexType::Light;   }
 	bool is_camera()     const { return type == VertexType::Camera;  }

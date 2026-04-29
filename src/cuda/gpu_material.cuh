@@ -16,17 +16,13 @@ struct GpuBSDFSample {
 
 constexpr double GPU_PI = 3.1415926535897932385;
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Emitted radiance
-// ─────────────────────────────────────────────────────────────────────────────
 __device__ inline vec3 gpu_emitted(const GpuMaterial& mat, bool front_face) {
 	if (mat.type == MatType::DIFFUSE_LIGHT && front_face) return mat.albedo;
 	return vec3(0,0,0);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // GGX helpers
-// ─────────────────────────────────────────────────────────────────────────────
 __device__ inline double ggx_D(double ndoth, double a) {
 	double a2 = a*a, d = ndoth*ndoth*(a2-1.0)+1.0;
 	return a2 / (GPU_PI * d * d);
@@ -98,7 +94,6 @@ __device__ inline double ggx_vndf_pdf(const vec3& wo, const vec3& h, double a) {
 	return ggx_D(ndoth, a) * ggx_G1(ndotwo, a) * hdotwo / (4.0 * ndotwo * hdotwo);
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // SSS — Jensen Dipole
 //
 // Model: light enters at a surface point, scatters inside the volume,
@@ -119,7 +114,6 @@ __device__ inline double ggx_vndf_pdf(const vec3& wo, const vec3& h, double a) {
 // Sampling: sample r from a 1D exponential in r, then uniform phi.
 // The exit point is x_o = x_i + r*(tangent direction).
 // Exit direction is cosine-weighted on the outward hemisphere at x_o.
-// ─────────────────────────────────────────────────────────────────────────────
 
 // Fresnel diffuse reflectance approximation (Egan & Hilgeman)
 __device__ inline double sss_Fdr(double eta) {
@@ -185,7 +179,7 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	float  mfp = mat.mfp;
 	double eta = (double)mat.ir;
 
-	// ── Dipole parameters ─────────────────────────────────────────────────────
+	// Dipole parameters
 	// Reduced scattering: sigma_s' = sigma_s * (1-g), g=0 for isotropic
 	// We parameterise directly from mfp: sigma_t = 1/mfp per channel
 	// For coloured materials, scale per channel by albedo luminance
@@ -209,7 +203,7 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	vec3 z_r = vec3(1.0/sigma_t.x(), 1.0/sigma_t.y(), 1.0/sigma_t.z());
 	vec3 z_v = z_r * (1.0 + 4.0/3.0 * A);
 
-	// ── Sample exit point on the surface disk ─────────────────────────────────
+	// 
 	// Build tangent frame at the entry point
 	onb uvw; uvw.build_from_w(rec.normal);
 
@@ -224,19 +218,19 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	// We shoot a ray from above (entry point + offset + normal*epsilon) downward
 	vec3 x_exit = rec.p + offset;
 
-	// ── Evaluate the dipole profile at radius r ───────────────────────────────
+	// Evaluate the dipole profile at radius r
 	vec3 Rd = sss_dipole_R(r, sigma_t, z_r, z_v);
 
 	// Scale by albedo — the profile gives the reduced scattering contribution,
 	// albedo modulates it per channel
 	Rd = Rd * alb;
 
-	// ── Exit direction: cosine-weighted on outward hemisphere ─────────────────
+	// Exit direction: cosine-weighted on outward hemisphere
 	vec3 wi = uvw.local(rand_cosine_direction(rng));
 	double cos_out = fmax(dot(rec.normal, wi), 0.0);
 	if (cos_out <= 0.0) return bs;
 
-	// ── Fresnel transmittance at entry and exit ───────────────────────────────
+	// 
 	// Entry Fresnel (air -> medium): T_i = 1 - F(cos_i)
 	vec3  ud      = unit_vector(wo.direction());
 	double cos_in = fmax(dot(-ud, rec.normal), 0.0);
@@ -251,7 +245,7 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	double F_out   = r0_out + (1.0-r0_out) * pow(1.0-cos_out, 5.0);
 	double T_out   = 1.0 - F_out;
 
-	// ── PDF ───────────────────────────────────────────────────────────────────
+	// 
 	// pdf(r) = exp(-r/mfp) / mfp  (exponential sampling)
 	// pdf(phi) = 1/(2*pi)
 	// pdf(wi) = cos_out / pi  (cosine-weighted)
@@ -261,7 +255,7 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	double pdf     = pdf_r * pdf_phi * pdf_wi;
 	if (pdf <= 1e-10) return bs;
 
-	// ── BSDF value ────────────────────────────────────────────────────────────
+	// 
 	// f = T_in * Rd * T_out * cos_out / pi
 	// The pi in the denominator and the cos_out cancel with the pdf,
 	// but we keep the full form here and let the integrator divide by pdf.
@@ -274,9 +268,7 @@ __device__ inline GpuBSDFSample gpu_sample_sss(
 	return bs;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Public interface
-// ─────────────────────────────────────────────────────────────────────────────
 
 __device__ inline vec3 gpu_f(const GpuMaterial& mat,
 							   const vec3& wi, const vec3& normal) {

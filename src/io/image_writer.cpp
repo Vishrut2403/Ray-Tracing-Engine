@@ -30,8 +30,7 @@ static inline double gamma_encode(double x) {
 
 void ImageWriter::write_ppm(
 	const std::string& path,
-	const Framebuffer& fb,
-	int /*samples_per_pixel*/
+	const Framebuffer& fb
 ) {
 	std::ofstream out(path);
 	int W = fb.get_width(), H = fb.get_height();

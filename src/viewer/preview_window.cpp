@@ -106,7 +106,7 @@ PreviewWindow::~PreviewWindow() {
 bool PreviewWindow::should_close() const { return glfwWindowShouldClose(window); }
 void PreviewWindow::poll_events()        { glfwPollEvents(); }
 
-void PreviewWindow::update(const float* fb, float /*invSamples*/)
+void PreviewWindow::update(const float* fb)
 {
 	glBindTexture(GL_TEXTURE_2D, texture);
 	glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGB, GL_FLOAT, fb);

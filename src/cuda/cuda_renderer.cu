@@ -2,7 +2,7 @@
 #include "cuda/gpu_integrator.cuh"
 #include "cuda/gpu_restir.cuh"
 #include "cuda/gpu_restir_kernels.cuh"
-#include "cuda/gpu_restir_gi_kernels.cuh"    // ← new
+#include "cuda/gpu_restir_gi_kernels.cuh"
 #include "cuda/gpu_env_map.cuh"
 #include "cuda/gpu_env_uploader.h"
 #include "cuda/gpu_mesh_uploader.h"
@@ -16,8 +16,6 @@
 #include <mutex>
 #include <string>
 
-const int GI_K_NEIGHBORS  = 2;   // ← separate from DI's K=5
-const int GI_SPATIAL_RADIUS = 20; // ← tighter radius too
 
 void GpuScene::free_device() {
 	if (d_materials) { cudaFree(d_materials); d_materials = nullptr; }
@@ -126,6 +124,8 @@ void cuda_render(const Scene& scene,
 	const int M_CANDIDATES   = 32;
 	const int K_NEIGHBORS    = 5;
 	const int SPATIAL_RADIUS = 30;
+	const int GI_K_NEIGHBORS = 1;      // ← only best neighbor for GI
+	const int GI_SPATIAL_RADIUS = 5;   // ← very tight radius
 	const int PREVIEW_EVERY  = 4;
 
 	printf("[CUDA/ReSTIR+GI] %dx%d spp=%d M=%d K=%d r=%d\n",
@@ -180,12 +180,16 @@ void cuda_render(const Scene& scene,
 			d_env_map, background
 		);
 
-		// ── GI Pass 1: Skip temporal, copy initial directly to temporal ───────
-		cudaMemcpyAsync(d_gi_temporal, d_gi_initial,
-						N * sizeof(GIReservoir),
+		// ── GI Pass 1: Temporal reuse with reconnection shift ───────────────
+		// DISABLED for offline rendering - temporal reuse primarily benefits real-time (1 spp/frame)
+		// At 64+ spp, spatial reuse alone provides sufficient quality
+		// For now: copy initial directly to temporal, skip temporal merge logic
+		cudaMemcpyAsync(d_gi_temporal, d_gi_initial, N * sizeof(GIReservoir),
 						cudaMemcpyDeviceToDevice, stream);
 
-		// ── GI Pass 2: Spatial reuse only ────────────────────────────────────
+		// ── GI Pass 2: Spatial reuse ─────────────────────────────────────────
+		// Reconnection shift with jacobian bounds checking
+		// K=1 neighbor, r=5 radius to smooth noise without destroying detail
 		restir_gi_spatial_kernel<<<blocks,threads,0,stream>>>(
 			W, H,
 			gpu_scene.d_hittables, gpu_scene.n_hittables,
@@ -195,6 +199,9 @@ void cuda_render(const Scene& scene,
 			d_gbuffer_cur, d_gi_temporal, d_gi_spatial,
 			d_states, GI_K_NEIGHBORS, GI_SPATIAL_RADIUS
 		);
+
+		// Note: d_gi_prev buffer remains allocated but unused
+		// Kept for future temporal reuse implementation (hybrid shift mapping)
 
 		// ── Pass: Shade (DI + GI + volumetrics) ──────────────────────────────
 		restir_shade_kernel<<<blocks,threads,0,stream>>>(
@@ -224,6 +231,11 @@ void cuda_render(const Scene& scene,
 		d_res_prev       = d_res_spatial;
 		d_res_spatial    = tmp_r;
 
+		// GI reservoir
+		GIReservoir* tmp_gi = d_gi_prev;
+		d_gi_prev           = d_gi_spatial;
+		d_gi_spatial        = tmp_gi;
+
 		if (preview && (s % PREVIEW_EVERY == 0 || s == spp-1)) {
 			cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
 							cudaMemcpyDeviceToHost, stream);
@@ -236,12 +248,9 @@ void cuda_render(const Scene& scene,
 			preview->poll_events();
 			{
 				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview->update(fb.raw_data(), 1.0f);
+				preview->update(fb.raw_data());
 			}
 		}
-
-		printf("\r[CUDA/ReSTIR+GI] %d / %d spp", s+1, spp);
-		fflush(stdout);
 	}
 
 	cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),

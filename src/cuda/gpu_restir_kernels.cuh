@@ -8,9 +8,7 @@
 
 #define TEMPORAL_M_CAP 20
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Pass 0: G-Buffer fill + initial RIS sampling
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_initial_kernel(
 	int W, int H,
 	GpuCamera cam,
@@ -79,9 +77,7 @@ __global__ void restir_initial_kernel(
 	rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Pass 1: Temporal reuse
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_temporal_kernel(
 	int W, int H,
 	const GpuMaterial*   materials,
@@ -138,9 +134,7 @@ __global__ void restir_temporal_kernel(
 	rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Pass 2: Spatial reuse
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_spatial_kernel(
 	int W, int H,
 	const GpuHittable*   hittables,  int n_hittables,
@@ -204,9 +198,7 @@ __global__ void restir_spatial_kernel(
 	rng_states[idx] = rng;
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Pass 3: Final shading — ReSTIR DI + ReSTIR GI + volumetrics
-// ─────────────────────────────────────────────────────────────────────────────
 __global__ void restir_shade_kernel(
 	int W, int H,
 	float* d_accum,
@@ -237,7 +229,7 @@ __global__ void restir_shade_kernel(
 	vec3 L(0,0,0);
 	const GBufferPixel& gbuf = gbuffer[idx];
 
-	// ── Emitter pixel ─────────────────────────────────────────────────────────
+	// Emitter pixel
 	if (gbuf.is_emitter) {
 		vec3 emit = gbuf.Le;
 		if (medium.active)
@@ -249,7 +241,7 @@ __global__ void restir_shade_kernel(
 		return;
 	}
 
-	// ── Miss ──────────────────────────────────────────────────────────────────
+	// Miss
 	if (!gbuf.valid) {
 		double u = (x + 0.5) / (W-1);
 		double v = (y + 0.5) / (H-1);
@@ -259,7 +251,7 @@ __global__ void restir_shade_kernel(
 		else
 			L = background;
 
-	// ── Surface hit ───────────────────────────────────────────────────────────
+	// Surface hit
 	} else {
 		const GpuMaterial& mat = materials[gbuf.mat_id];
 		const Reservoir&   res = reservoirs[idx];
@@ -268,7 +260,7 @@ __global__ void restir_shade_kernel(
 			? transmittance(medium, (double)gbuf.depth)
 			: vec3(1,1,1);
 
-		// ── Direct lighting via ReSTIR DI ──────────────────────────────────
+		// Direct lighting via ReSTIR DI────
 		if (res.y.light_id >= 0 && res.W > 0.0f) {
 			vec3  d    = res.y.pos - gbuf.pos;
 			float dist = (float)d.length();
@@ -290,7 +282,7 @@ __global__ void restir_shade_kernel(
 			}
 		}
 
-		// ── Indirect lighting via ReSTIR GI ────────────────────────────────
+		// Indirect lighting via ReSTIR GI────
 		const GIReservoir& gi_res = gi_reservoirs[idx];
 		bool use_gi = has_gi
 				   && gi_res.y.valid
@@ -330,7 +322,7 @@ __global__ void restir_shade_kernel(
 				}
 			}
 		} else {
-			// ── Fallback: single BSDF bounce + NEE (frame 0 / empty GI) ───
+			// Fallback: single BSDF bounce + NEE (frame 0 / empty GI)
 			GpuHitRecord gbuf_rec{};
 			gbuf_rec.p          = gbuf.pos;
 			gbuf_rec.normal     = gbuf.normal;

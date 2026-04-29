@@ -73,10 +73,8 @@ private:
 		m.push_back(mat); return (int)m.size()-1;
 	}
 
-	// ── SSS material ──────────────────────────────────────────────────────────
-	// albedo    — scattering color (what the light turns into inside the medium)
-	// mfp       — mean free path in scene units (larger = more translucent)
-	// ior       — index of refraction at the air/medium boundary
+	// SSS (subsurface scattering) material
+	// albedo: scattering color, mfp: mean free path, ior: index of refraction
 	static int add_sss(std::vector<GpuMaterial>& m,
 					   vec3 albedo, float mfp, float ior = 1.4f) {
 		GpuMaterial mat{};
@@ -325,11 +323,7 @@ private:
 		return scene;
 	}
 
-	// ── SSS demo scene ────────────────────────────────────────────────────────
-	// Three spheres in a Cornell box with different subsurface parameters:
-	//   Left   — skin-like  (warm salmon, mfp=0.08, ior=1.4)
-	//   Center — marble     (warm white,  mfp=0.20, ior=1.3)
-	//   Right  — jade       (deep green,  mfp=0.03, ior=1.5)
+	// SSS demo: three spheres with varying subsurface scattering
 	static GpuScene build_sss(const std::string& name) {
 		std::vector<GpuMaterial> mats;
 		std::vector<GpuHittable> hits;

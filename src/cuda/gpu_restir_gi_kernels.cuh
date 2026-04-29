@@ -148,6 +148,7 @@ __global__ void restir_gi_temporal_kernel(
 		const GBufferPixel& pbuf = gbuffer_prev[idx];
 		const GIReservoir&  prev = gi_prev[idx];
 
+		// Base coherence checks────────────
 		bool valid = pbuf.valid
 			&& prev.M > 0
 			&& prev.y.valid
@@ -156,18 +157,42 @@ __global__ void restir_gi_temporal_kernel(
 			&& fabs(gbuf.depth - pbuf.depth) < 0.1f * gbuf.depth;
 
 		if (valid) {
-			GIReservoir prev_capped = prev;
-			prev_capped.cap_M(GI_TEMPORAL_M_CAP);
+			// Shift mapping: Can we reconnect previous path to current viewer?
+			vec3  d_prev     = prev.y.x_s - pbuf.pos;  // original connection
+			vec3  d_new      = prev.y.x_s - gbuf.pos;  // new connection attempt
+			float dist_prev  = (float)d_prev.length();
+			float dist_new   = (float)d_new.length();
+			
+			if (dist_prev > 1e-6f && dist_new > 1e-6f) {
+				// Compute reconnection jacobian
+				float cos_prev = fmaxf(1e-6f, 
+					(float)fabs(dot(prev.y.n_s, d_prev / dist_prev)));
+				float cos_new = fmaxf(1e-6f, 
+					(float)fabs(dot(prev.y.n_s, d_new / dist_new)));
+				
+				float jacobian = (cos_new * dist_prev * dist_prev) 
+							   / (cos_prev * dist_new * dist_new + 1e-10f);
+				
+				// Clamp jacobian to detect extreme geometry changes (likely disocclusion)
+				jacobian = fminf(jacobian, 5.0f);
+				jacobian = fmaxf(jacobian, 0.2f);  // ← reject small jacobians (shift too extreme)
+				
+				// If jacobian is too extreme, treat as disocclusion (random replay)
+				bool is_disoccluded = jacobian < 0.3f || jacobian > 3.0f;
+				
+				if (!is_disoccluded) {
+				// Reconnection shift: safe to reuse
+					GIReservoir prev_capped = prev;
+					prev_capped.cap_M(GI_TEMPORAL_M_CAP);
 
-			float jacobian = reconnection_jacobian(prev_capped.y, gbuf.pos);
-			float ph       = gi_p_hat(prev_capped.y, gbuf, materials)
-						   * jacobian;
-
-			combined.merge(prev_capped, ph, &rng);
-
-			// Finalize recomputes W with cap AND renormalizes w_sum
-			float ph2 = gi_p_hat(combined.y, gbuf, materials);
-			combined.finalize(ph2);
+					// Don't multiply by jacobian here — it's already in the importance!
+					// Just use the base p_hat; jacobian was only for validity check
+					float ph = gi_p_hat(prev_capped.y, gbuf, materials);
+					combined.merge(prev_capped, ph, &rng);
+					// Note: Don't finalize here! Finalization happens after spatial reuse
+				}
+				// else: disoccluded — skip temporal, use only current frame's samples
+			}
 		}
 	}
 
@@ -222,8 +247,8 @@ __global__ void restir_gi_spatial_kernel(
 						hittables, n_hittables,
 						tris, tri_bvh, tri_root, n_tris)) continue;
 
-		float jacobian = reconnection_jacobian(nr.y, gbuf.pos);
-		float ph       = gi_p_hat(nr.y, gbuf, materials) * jacobian;
+		// Don't multiply by jacobian — it's for shift mapping validity only
+		float ph = gi_p_hat(nr.y, gbuf, materials);
 		combined.merge(nr, ph, &rng);
 	}
 

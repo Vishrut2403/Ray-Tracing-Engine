@@ -8,7 +8,7 @@
 
 class OIDNDenoiser {
 public:
-	static void denoise(Framebuffer& fb, bool /*use_cuda*/ = false) {
+	static void denoise(Framebuffer& fb) {
 		const int W = fb.get_width();
 		const int H = fb.get_height();
 		const int N = W * H;

@@ -99,7 +99,7 @@ inline std::shared_ptr<hittable> load_obj(
 
 	int nv = (int)attrib.vertices.size() / 3;
 
-	// ── Pass 1: accumulate area-weighted face normals per vertex ─────────────
+	// Accumulate area-weighted face normals per vertex
 	std::vector<vec3> smooth_normals(nv, vec3(0,0,0));
 
 	for (const auto& shape : shapes) {
@@ -136,7 +136,7 @@ inline std::shared_ptr<hittable> load_obj(
 		else            n = vec3(0, 1, 0); // degenerate fallback
 	}
 
-	// ── Pass 2: build triangles with smooth normals ───────────────────────────
+	// Build triangles with smooth normals
 	hittable_list tris;
 	size_t tri_count = 0;
 

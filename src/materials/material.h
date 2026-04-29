@@ -257,7 +257,6 @@ public:
 	}
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
 // Subsurface scattering — Jensen dipole model
 //
 // Parameters:
@@ -269,7 +268,6 @@ public:
 //   make_shared<subsurface>(color(0.8, 0.3, 0.2), 0.05, 1.4)  // red wax / skin-like
 //   make_shared<subsurface>(color(0.9, 0.8, 0.7), 0.1,  1.3)  // milk / marble
 //   make_shared<subsurface>(color(0.2, 0.6, 0.2), 0.02, 1.4)  // leaf / jade
-// ─────────────────────────────────────────────────────────────────────────────
 class subsurface : public material {
 public:
 	color  albedo_color;
