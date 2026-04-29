@@ -5,14 +5,14 @@
 
 class ImageWriter {
 public:
-    static void write_ppm(
-        const std::string& path,
-        const Framebuffer& fb,
-        int samples_per_pixel
-    );
+	static void write_ppm(
+		const std::string& path,
+		const Framebuffer& fb,
+		int samples_per_pixel
+	);
 
-    static void write_exr(
-        const std::string& path,
-        const Framebuffer& fb
-    );
+	static void write_exr(
+		const std::string& path,
+		const Framebuffer& fb
+	);
 };

@@ -7,17 +7,17 @@
 
 class Renderer {
 public:
-    Renderer(int spp, int depth, int tile_size);
+	Renderer(int spp, int depth, int tile_size);
 
-    void render(
-        const Scene& scene,
-        Framebuffer& fb,
-        const camera& cam,
-        const color& background
-    );
+	void render(
+		const Scene& scene,
+		Framebuffer& fb,
+		const camera& cam,
+		const color& background
+	);
 
 private:
-    int samples_per_pixel;
-    int max_depth;
-    int tile_size;
+	int samples_per_pixel;
+	int max_depth;
+	int tile_size;
 };

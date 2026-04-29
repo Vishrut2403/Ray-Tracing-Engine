@@ -2,12 +2,12 @@
 #include <vector>
 
 struct Tile {
-    int x0, y0;
-    int x1, y1;
+	int x0, y0;
+	int x1, y1;
 };
 
 std::vector<Tile> generate_tiles(
-    int width,
-    int height,
-    int tile_size
+	int width,
+	int height,
+	int tile_size
 );

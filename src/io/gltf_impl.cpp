@@ -5,9 +5,9 @@
 
 namespace tinygltf {
 bool WriteImageData(const std::string*, const std::string*,
-                    const Image*, bool,
-                    const FsCallbacks*, const URICallbacks*,
-                    std::string*, void*) {
-    return false;
+					const Image*, bool,
+					const FsCallbacks*, const URICallbacks*,
+					std::string*, void*) {
+	return false;
 }
 }

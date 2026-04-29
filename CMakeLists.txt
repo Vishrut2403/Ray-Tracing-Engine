@@ -72,8 +72,5 @@ find_package(CUDAToolkit REQUIRED)
 target_link_libraries(render PRIVATE CUDA::cudart CUDA::curand)
 
 # OIDN 
-target_include_directories(render PRIVATE /usr/include)
-target_link_libraries(render PRIVATE
-    /usr/lib/libOpenImageDenoise.so
-    /usr/lib/libOpenImageDenoise_core.so.2.3.3
-)
+find_package(OpenImageDenoise REQUIRED)
+target_link_libraries(render PRIVATE OpenImageDenoise)

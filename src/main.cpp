@@ -17,94 +17,94 @@
 #include <string>
 
 static bool has_flag(int argc, char** argv, const char* flag) {
-    for (int i = 1; i < argc; ++i)
-        if (strcmp(argv[i], flag) == 0) return true;
-    return false;
+	for (int i = 1; i < argc; ++i)
+		if (strcmp(argv[i], flag) == 0) return true;
+	return false;
 }
 
 static bool get_flag_value(int argc, char** argv,
-                            const char* flag, const char* value) {
-    for (int i = 1; i < argc-1; ++i)
-        if (strcmp(argv[i], flag) == 0 && strcmp(argv[i+1], value) == 0)
-            return true;
-    return false;
+							const char* flag, const char* value) {
+	for (int i = 1; i < argc-1; ++i)
+		if (strcmp(argv[i], flag) == 0 && strcmp(argv[i+1], value) == 0)
+			return true;
+	return false;
 }
 
 static bool ends_with(const std::string& s, const std::string& suffix) {
-    return s.size() >= suffix.size() &&
-           s.compare(s.size()-suffix.size(), suffix.size(), suffix) == 0;
+	return s.size() >= suffix.size() &&
+		   s.compare(s.size()-suffix.size(), suffix.size(), suffix) == 0;
 }
 
 int main(int argc, char** argv)
 {
-    RenderConfig config  = parse_cli(argc, argv);
-    bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
-    bool no_preview      = has_flag(argc, argv, "--no-preview");
-    bool use_ppm         = (config.feature == "ppm");
-    bool use_denoise     = has_flag(argc, argv, "--denoise");
+	RenderConfig config  = parse_cli(argc, argv);
+	bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
+	bool no_preview      = has_flag(argc, argv, "--no-preview");
+	bool use_ppm         = (config.feature == "ppm");
+	bool use_denoise     = has_flag(argc, argv, "--denoise");
 
-    if (config.feature == "furnace")
-        apply_furnace_preset(config);
+	if (config.feature == "furnace")
+		apply_furnace_preset(config);
 
-    Scene  scene = SceneFactory::build(config.feature);
-    camera cam   = CameraFactory::build(config);
-    Framebuffer fb(config.width, config.height);
+	Scene  scene = SceneFactory::build(config.feature);
+	camera cam   = CameraFactory::build(config);
+	Framebuffer fb(config.width, config.height);
 
-    if (use_ppm) {
-        PPMRenderer ppm(
-            config.samples,
-            1000000,
-            config.max_depth,
-            50.0,
-            0.7
-        );
-        ppm.render(scene, fb, cam, config.background);
+	if (use_ppm) {
+		PPMRenderer ppm(
+			config.samples,
+			1000000,
+			config.max_depth,
+			50.0,
+			0.7
+		);
+		ppm.render(scene, fb, cam, config.background);
 
-    } else if (use_gpu) {
-        if (no_preview) {
-            cuda_render(scene, fb, cam, config.background,
-                        config.samples, config.max_depth,
-                        nullptr, config.feature);
-        } else {
-            PreviewWindow preview(config.width, config.height);
-            std::thread render_thread([&]() {
-                cuda_render(scene, fb, cam, config.background,
-                            config.samples, config.max_depth,
-                            &preview, config.feature);
-            });
-            while (!preview.should_close()) {
-                preview.poll_events();
-                std::lock_guard<std::mutex> lock(fb.mtx);
-                preview.update(fb.raw_data(), 1.0f);
-            }
-            render_thread.join();
-        }
-    } else {
-        Renderer renderer(config.samples, config.max_depth, config.tile_size);
-        if (no_preview) {
-            renderer.render(scene, fb, cam, config.background);
-        } else {
-            PreviewWindow preview(config.width, config.height);
-            std::thread render_thread([&]() {
-                renderer.render(scene, fb, cam, config.background);
-            });
-            while (!preview.should_close()) {
-                preview.poll_events();
-                std::lock_guard<std::mutex> lock(fb.mtx);
-                preview.update(fb.raw_data(), 1.0f);
-            }
-            render_thread.join();
-        }
-    }
+	} else if (use_gpu) {
+		if (no_preview) {
+			cuda_render(scene, fb, cam, config.background,
+						config.samples, config.max_depth,
+						nullptr, config.feature);
+		} else {
+			PreviewWindow preview(config.width, config.height);
+			std::thread render_thread([&]() {
+				cuda_render(scene, fb, cam, config.background,
+							config.samples, config.max_depth,
+							&preview, config.feature);
+			});
+			while (!preview.should_close()) {
+				preview.poll_events();
+				std::lock_guard<std::mutex> lock(fb.mtx);
+				preview.update(fb.raw_data(), 1.0f);
+			}
+			render_thread.join();
+		}
+	} else {
+		Renderer renderer(config.samples, config.max_depth, config.tile_size);
+		if (no_preview) {
+			renderer.render(scene, fb, cam, config.background);
+		} else {
+			PreviewWindow preview(config.width, config.height);
+			std::thread render_thread([&]() {
+				renderer.render(scene, fb, cam, config.background);
+			});
+			while (!preview.should_close()) {
+				preview.poll_events();
+				std::lock_guard<std::mutex> lock(fb.mtx);
+				preview.update(fb.raw_data(), 1.0f);
+			}
+			render_thread.join();
+		}
+	}
 
-    if (use_denoise) {
-        OIDNDenoiser::denoise(fb, use_gpu);
-    }
+	if (use_denoise) {
+		OIDNDenoiser::denoise(fb, use_gpu);
+	}
 
-    if (ends_with(config.output_path, ".exr"))
-        ImageWriter::write_exr(config.output_path, fb);
-    else
-        ImageWriter::write_ppm(config.output_path, fb, config.samples);
+	if (ends_with(config.output_path, ".exr"))
+		ImageWriter::write_exr(config.output_path, fb);
+	else
+		ImageWriter::write_ppm(config.output_path, fb, config.samples);
 
-    return 0;
+	return 0;
 }

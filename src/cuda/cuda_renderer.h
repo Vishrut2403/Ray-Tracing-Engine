@@ -8,10 +8,10 @@
 #include <string>
 
 void cuda_render(const Scene& scene,
-                 Framebuffer& fb,
-                 const camera& cam,
-                 const color& background,
-                 int spp,
-                 int max_depth,
-                 PreviewWindow* preview = nullptr,
-                 const std::string& scene_name = "cornell");
+				 Framebuffer& fb,
+				 const camera& cam,
+				 const color& background,
+				 int spp,
+				 int max_depth,
+				 PreviewWindow* preview = nullptr,
+				 const std::string& scene_name = "cornell");

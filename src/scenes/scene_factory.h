@@ -11,18 +11,18 @@
 
 class SceneFactory {
 public:
-    static Scene build(const std::string& name) {
-        if (name == "cornell")  return build_cornell_volume_scene();
-        if (name == "furnace")  return build_furnace_scene();
-        if (name == "ggx")      return build_ggx_scene();
-        if (name == "hdr")      return build_hdr_scene();
-        if (name == "bunny")    return build_bunny_scene();
-        if (name == "glass")    return build_rough_glass_scene();
-        if (name == "caustics") return build_caustics_scene();
-        if (name == "helmet") return build_helmet_scene();
-        if (name == "ppm") return build_ppm_scene();
+	static Scene build(const std::string& name) {
+		if (name == "cornell")  return build_cornell_volume_scene();
+		if (name == "furnace")  return build_furnace_scene();
+		if (name == "ggx")      return build_ggx_scene();
+		if (name == "hdr")      return build_hdr_scene();
+		if (name == "bunny")    return build_bunny_scene();
+		if (name == "glass")    return build_rough_glass_scene();
+		if (name == "caustics") return build_caustics_scene();
+		if (name == "helmet") return build_helmet_scene();
+		if (name == "ppm") return build_ppm_scene();
 
-        std::cerr << "Unknown scene '" << name << "'. Using cornell.\n";
-        return build_cornell_volume_scene();
-    }
+		std::cerr << "Unknown scene '" << name << "'. Using cornell.\n";
+		return build_cornell_volume_scene();
+	}
 };
