@@ -92,8 +92,8 @@ __global__ void restir_gi_initial_kernel(
 							vec3 lLe = gpu_emitted(
 								materials[lr.mat_id], lr.front_face);
 							if (lLe.length_squared() > 0.0) {
-								vec3   f2  = gpu_f(materials[irec.mat_id],
-													wl, irec.normal);
+								vec3   f2  = gpu_f_dir(materials[irec.mat_id],
+													-bs.wi, wl, irec.normal);
 								double ct2 = fabs(dot(irec.normal, wl));
 								L_o = f2 * lLe * (ct2 / lpdf);
 							}

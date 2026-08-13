@@ -134,8 +134,9 @@ __device__ vec3 gpu_Li(
 						vec3 Le = gpu_emitted(materials[light_rec.mat_id],
 											  light_rec.front_face);
 						if (Le.length_squared() > 0.0) {
-							vec3   f        = gpu_f(mat, wi, rec.normal);
-							double bsdf_pdf = gpu_pdf(mat, wi, rec.normal);
+							vec3   wo       = -unit_vector(r.direction());
+							vec3   f        = gpu_f_dir(mat, wo, wi, rec.normal);
+							double bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
 							double weight   = gpu_power_heuristic(light_pdf, bsdf_pdf);
 							double cos_t    = fabs(dot(rec.normal, wi));
 							L = L + beta * f * Le * (cos_t * weight / light_pdf);
@@ -156,8 +157,9 @@ __device__ vec3 gpu_Li(
 										  shadow_rec, MESH_ARGS);
 				if (!occluded) {
 					vec3   Le       = gpu_env_Le(*env_map, wi);
-					vec3   f        = gpu_f(mat, wi, rec.normal);
-					double bsdf_pdf = gpu_pdf(mat, wi, rec.normal);
+					vec3   wo       = -unit_vector(r.direction());
+					vec3   f        = gpu_f_dir(mat, wo, wi, rec.normal);
+					double bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
 					double weight   = gpu_power_heuristic((double)env_pdf_val, bsdf_pdf);
 					double cos_t    = fabs(dot(rec.normal, wi));
 					L = L + beta * f * Le * (cos_t * weight / (double)env_pdf_val);

@@ -459,9 +459,9 @@ __global__ void restir_shade_kernel(
 											materials[lr.mat_id],
 											lr.front_face);
 										if (lLe.length_squared() > 0.0) {
-											vec3 if_ = gpu_f(
+											vec3 if_ = gpu_f_dir(
 												materials[irec.mat_id],
-												wl, irec.normal);
+												-bs.wi, wl, irec.normal);
 											double ct2 = fabs(
 												dot(irec.normal, wl));
 											vec3 tr_light = medium.active
