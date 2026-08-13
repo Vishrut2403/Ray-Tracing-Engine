@@ -84,7 +84,7 @@ struct GpuScene {
 	bool            has_env_map    = false;
 
 	GpuMedium       medium         = {{}, {}, {}, 0.0f, false};
-	
+
 	bool            use_bdpt       = false;  // Enable BDPT for caustics
 
 	void free_device();

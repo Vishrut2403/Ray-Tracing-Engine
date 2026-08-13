@@ -238,7 +238,6 @@ __global__ void restir_spatial_kernel(
 __global__ void restir_shade_kernel(
 	int W, int H,
 	float* d_accum,
-	GpuCamera cam,
 	vec3 background,
 	const GpuHittable*   hittables,  int n_hittables,
 	const GpuMaterial*   materials,
@@ -279,7 +278,7 @@ __global__ void restir_shade_kernel(
 
 	// Miss
 	if (!gbuf.valid) {
-			if (env_map && env_map->valid)
+		if (env_map && env_map->valid)
 			L = gpu_env_Le(*env_map, gbuf.miss_dir);
 		else
 			L = background;

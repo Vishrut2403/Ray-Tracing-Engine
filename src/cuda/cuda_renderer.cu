@@ -128,7 +128,7 @@ void cuda_render(const Scene& scene,
 
 	if (gpu_scene.use_bdpt) {
 		printf("[CUDA/BDPT] %dx%d spp=%d\n", W, H, spp);
-		
+
 		float* h_accum;
 		cudaMallocHost(&h_accum, N * 3 * sizeof(float));
 
@@ -331,7 +331,7 @@ void cuda_render(const Scene& scene,
 
 		// ── Pass: Shade (DI + GI + volumetrics) ──────────────────────────────
 		restir_shade_kernel<<<blocks,threads,0,stream>>>(
-			W, H, d_accum, gpu_cam, background,
+			W, H, d_accum, background,
 			gpu_scene.d_hittables, gpu_scene.n_hittables,
 			gpu_scene.d_materials,
 			gpu_scene.d_light_ids, gpu_scene.n_lights,

@@ -1,7 +1,6 @@
 #include "render/integrator.h"
 #include "materials/material.h"
 #include "lights/env_light.h"
-#include "bdpt/path_vertex.h"
 #include <algorithm>
 #include <cmath>
 #include <vector>

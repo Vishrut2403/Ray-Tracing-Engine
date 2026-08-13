@@ -8,7 +8,6 @@
 #include "hittables/hittable.h"
 #include "hittables/hittable_list.h"
 #include "lights/env_light.h"
-#include "bdpt/path_vertex.h"
 
 class Framebuffer;
 
