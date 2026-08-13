@@ -165,26 +165,7 @@ public:
 		  metallic (clamp(m, 0.0,   1.0)) {}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
-		double alpha = roughness * roughness;
-		onb uvw; uvw.build_from_w(rec.normal);
-
-		vec3 wo_l = -unit_vector(vec3(
-			dot(wo.direction(), uvw.u()),
-			dot(wo.direction(), uvw.v()),
-			dot(wo.direction(), uvw.w())
-		));
-
-		vec3 h_l = sample_vndf(wo_l, alpha);
-		vec3 h   = unit_vector(uvw.local(h_l));
-		vec3 wi  = unit_vector(reflect(-unit_vector(wo.direction()), h));
-
-		if (dot(wi, rec.normal) <= 0.0)
-			return { wi, color(0,0,0), 0.0, false };
-
-		double p = vndf_pdf(wo_l, h_l, alpha);
-		if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
-
-		return { wi, brdf(-unit_vector(wo.direction()), wi, rec.normal), p, false };
+		return sample_dir(-unit_vector(wo.direction()), rec);
 	}
 
 	// Without the cosine: the integrators apply cos(theta) themselves.
@@ -194,16 +175,7 @@ public:
 	}
 
 	virtual double pdf(const ray& wo, const vec3& wi, const hit_record& rec) const override {
-		if (dot(rec.normal, wi) <= 0.0) return 0.0;
-		double alpha = roughness * roughness;
-		onb uvw; uvw.build_from_w(rec.normal);
-
-		vec3 v = -unit_vector(wo.direction());
-		vec3 wo_l = vec3(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
-		vec3 h    = unit_vector(v + wi);
-		vec3 h_l  = vec3(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
-
-		return vndf_pdf(wo_l, h_l, alpha);
+		return combined_pdf(-unit_vector(wo.direction()), wi, rec.normal);
 	}
 
 	virtual color f_dir(const vec3& wo, const vec3& wi,
@@ -212,29 +184,29 @@ public:
 	}
 	virtual double pdf_dir(const vec3& wo, const vec3& wi,
 						   const hit_record& rec) const override {
-		if (dot(rec.normal, wi) <= 0.0 || dot(rec.normal, wo) <= 0.0) return 0.0;
-		double alpha = roughness * roughness;
-		onb uvw; uvw.build_from_w(rec.normal);
-		vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
-		vec3 h   = unit_vector(wo + wi);
-		vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
-		return vndf_pdf(wo_l, h_l, alpha);
+		return combined_pdf(wo, wi, rec.normal);
 	}
 	virtual BSDFSample sample_dir(const vec3& wo,
 								  const hit_record& rec) const override {
+		const vec3& n = rec.normal;
 		double alpha = roughness * roughness;
-		onb uvw; uvw.build_from_w(rec.normal);
+		onb uvw; uvw.build_from_w(n);
 		vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
 		if (wo_l.z() <= 0.0) return { vec3(0,0,0), color(0,0,0), 0.0, false };
 
-		vec3 h_l = sample_vndf(wo_l, alpha);
-		vec3 h   = unit_vector(uvw.local(h_l));
-		vec3 wi  = unit_vector(reflect(-wo, h));
-		if (dot(wi, rec.normal) <= 0.0) return { wi, color(0,0,0), 0.0, false };
+		vec3 wi;
+		if (random_double() < spec_prob()) {
+			vec3 h_l = sample_vndf(wo_l, alpha);
+			vec3 h   = unit_vector(uvw.local(h_l));
+			wi = unit_vector(reflect(-wo, h));
+		} else {
+			wi = unit_vector(uvw.local(random_cosine_direction()));
+		}
+		if (dot(wi, n) <= 0.0) return { wi, color(0,0,0), 0.0, false };
 
-		double p = vndf_pdf(wo_l, h_l, alpha);
+		double p = combined_pdf(wo, wi, n);
 		if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
-		return { wi, brdf(wo, wi, rec.normal), p, false };
+		return { wi, brdf(wo, wi, n), p, false };
 	}
 
 private:
@@ -258,6 +230,28 @@ private:
 	color F(double vdoth) const {
 		color f0 = color(0.04,0.04,0.04)*(1.0-metallic) + base_color*metallic;
 		return f0 + (color(1,1,1)-f0) * std::pow(1.0-vdoth, 5.0);
+	}
+
+	// Two lobes: GGX specular + Lambertian. Sampler and pdf must agree, so both
+	// pick a lobe and report the combined density.
+	double spec_prob() const {
+		color  f0 = color(0.04,0.04,0.04)*(1.0-metallic) + base_color*metallic;
+		double ls = 0.2126*f0.x() + 0.7152*f0.y() + 0.0722*f0.z();
+		double ld = (1.0-metallic) * (0.2126*base_color.x()
+					+ 0.7152*base_color.y() + 0.0722*base_color.z());
+		double t  = ls + ld;
+		return clamp(t > 1e-9 ? ls / t : 1.0, 0.1, 0.9);
+	}
+
+	double combined_pdf(const vec3& v, const vec3& l, const vec3& n) const {
+		if (dot(n, v) <= 0.0 || dot(n, l) <= 0.0) return 0.0;
+		double alpha = roughness * roughness;
+		onb uvw; uvw.build_from_w(n);
+		vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+		vec3 h = unit_vector(v + l);
+		vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+		double ps = spec_prob();
+		return ps * vndf_pdf(v_l, h_l, alpha) + (1.0 - ps) * dot(n, l) / pi;
 	}
 
 	// True BSDF, without the trailing cosine.

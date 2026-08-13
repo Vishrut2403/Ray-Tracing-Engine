@@ -94,6 +94,59 @@ __device__ inline double ggx_vndf_pdf(const vec3& wo, const vec3& h, double a) {
 	return ggx_D(ndoth, a) * ggx_G1(ndotwo, a) * hdotwo / (4.0 * ndotwo * hdotwo);
 }
 
+// Two lobes: GGX specular + Lambertian. Sampler and pdf must agree, so both
+// pick a lobe and report the combined density.
+__device__ inline double ggx_spec_prob(const GpuMaterial& mat) {
+	vec3 f0 = vec3(0.04,0.04,0.04)*(1.0-(double)mat.metallic)
+			+ mat.albedo*(double)mat.metallic;
+	double ls = 0.2126*f0.x() + 0.7152*f0.y() + 0.0722*f0.z();
+	double ld = (1.0-(double)mat.metallic) * (0.2126*mat.albedo.x()
+				+ 0.7152*mat.albedo.y() + 0.0722*mat.albedo.z());
+	double t  = ls + ld;
+	double p  = (t > 1e-9) ? ls / t : 1.0;
+	return fmin(fmax(p, 0.1), 0.9);
+}
+
+__device__ inline double ggx_combined_pdf(const GpuMaterial& mat, const vec3& v,
+										   const vec3& l, const vec3& n) {
+	if (dot(n, v) <= 0.0 || dot(n, l) <= 0.0) return 0.0;
+	double a = (double)mat.roughness * (double)mat.roughness;
+	onb uvw; uvw.build_from_w(n);
+	vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+	vec3 h = unit_vector(v + l);
+	vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+	double ps = ggx_spec_prob(mat);
+	return ps * ggx_vndf_pdf(v_l, h_l, a) + (1.0 - ps) * dot(n, l) / GPU_PI;
+}
+
+// wo points away from the surface.
+__device__ inline GpuBSDFSample ggx_sample_lobes(const GpuMaterial& mat,
+												  const vec3& wo, const vec3& n,
+												  curandState* rng) {
+	GpuBSDFSample bs{}; bs.pdf = 0.0;
+	double a = (double)mat.roughness * (double)mat.roughness;
+	onb uvw; uvw.build_from_w(n);
+	vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
+	if (wo_l.z() <= 0.0) return bs;
+
+	vec3 wi;
+	if (rand_double(rng) < ggx_spec_prob(mat)) {
+		vec3 h_l = ggx_sample_vndf(wo_l, a, rng);
+		vec3 h   = unit_vector(uvw.local(h_l));
+		wi = unit_vector(reflect(-wo, h));
+	} else {
+		wi = unit_vector(uvw.local(rand_cosine_direction(rng)));
+	}
+	if (dot(wi, n) <= 0.0) return bs;
+
+	double p = ggx_combined_pdf(mat, wo, wi, n);
+	if (p <= 0.0) return bs;
+
+	bs.wi = wi; bs.f = ggx_brdf(mat, wo, wi, n);
+	bs.pdf = p; bs.is_delta = false;
+	return bs;
+}
+
 // SSS — Jensen dipole as a diffusion BRDF; mirrors the CPU `subsurface` class.
 // mat.mfp does not affect shading: Rd is scale-invariant in the exit radius and
 // the exit point stays pinned to the entry point.
@@ -185,29 +238,8 @@ __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 	}
 
 	if (mat.type == MatType::GGX) {
-		double alpha = (double)mat.roughness * (double)mat.roughness;
-		onb uvw; uvw.build_from_w(rec.normal);
-
-		vec3 wo_l = -unit_vector(vec3(
-			dot(wo.direction(), uvw.u()),
-			dot(wo.direction(), uvw.v()),
-			dot(wo.direction(), uvw.w())
-		));
-
-		if (wo_l.z() <= 0.0) return bs;
-
-		vec3 h_l = ggx_sample_vndf(wo_l, alpha, rng);
-		vec3 h   = unit_vector(uvw.local(h_l));
-		vec3 wi  = unit_vector(reflect(-unit_vector(wo.direction()), h));
-
-		if (dot(wi, rec.normal) <= 0.0) return bs;
-
-		double p = ggx_vndf_pdf(wo_l, h_l, alpha);
-		if (p <= 0.0) return bs;
-
-		vec3 v = -unit_vector(wo.direction());
-		vec3 f = ggx_brdf(mat, v, wi, rec.normal);
-		return { wi, f, p, false };
+		return ggx_sample_lobes(mat, -unit_vector(wo.direction()),
+								rec.normal, rng);
 	}
 
 	if (mat.type == MatType::METAL) {
@@ -268,15 +300,8 @@ __device__ inline double gpu_pdf_dir(const GpuMaterial& mat, const vec3& wo,
 			if (c <= 0.0 || dot(n, wo) <= 0.0) return 0.0;
 			return c / GPU_PI;
 		}
-		case MatType::GGX: {
-			if (dot(n, wi) <= 0.0 || dot(n, wo) <= 0.0) return 0.0;
-			double a = (double)mat.roughness * (double)mat.roughness;
-			onb uvw; uvw.build_from_w(n);
-			vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
-			vec3 h   = unit_vector(wo + wi);
-			vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
-			return ggx_vndf_pdf(wo_l, h_l, a);
-		}
+		case MatType::GGX:
+			return ggx_combined_pdf(mat, wo, wi, n);
 		default:
 			return 0.0;
 	}
@@ -304,24 +329,8 @@ __device__ inline GpuBSDFSample gpu_sample_dir(const GpuMaterial& mat,
 			bs.pdf = c / GPU_PI; bs.is_delta = false;
 			return bs;
 		}
-		case MatType::GGX: {
-			double a = (double)mat.roughness * (double)mat.roughness;
-			onb uvw; uvw.build_from_w(n);
-			vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
-			if (wo_l.z() <= 0.0) return bs;
-
-			vec3 h_l = ggx_sample_vndf(wo_l, a, rng);
-			vec3 h   = unit_vector(uvw.local(h_l));
-			vec3 wi  = unit_vector(reflect(-wo, h));
-			if (dot(wi, n) <= 0.0) return bs;
-
-			double p = ggx_vndf_pdf(wo_l, h_l, a);
-			if (p <= 0.0) return bs;
-
-			bs.wi = wi; bs.f = ggx_brdf(mat, wo, wi, n);
-			bs.pdf = p; bs.is_delta = false;
-			return bs;
-		}
+		case MatType::GGX:
+			return ggx_sample_lobes(mat, wo, n, rng);
 		case MatType::METAL: {
 			vec3 wi = unit_vector(reflect(-wo, n)
 								  + (double)mat.fuzz * rand_in_unit_sphere(rng));
