@@ -23,6 +23,96 @@ static inline double power_heuristic(double pdf_a, double pdf_b) {
 	return a2 / (a2 + b2 + 1e-12);
 }
 
+// Bidirectional path tracing (Veach, ch. 10). Port of cuda/gpu_bdpt.cuh — keep
+// the two in step. Scope: closed scenes, area lights, pinhole camera, no env.
+
+static const int    MAX_BDPT_VERTS = 12;
+static const int    MAX_BDPT_DEPTH = MAX_BDPT_VERTS - 2;
+static const double BDPT_RAY_EPS   = 1e-4;
+
+struct BDPTVertex {
+	point3 p;
+	vec3   n;
+	color  beta;
+	color  Le;
+	std::shared_ptr<material> mat;
+	bool   delta       = false;
+	bool   is_emissive = false;
+	bool   is_light_ep = false;
+	bool   is_camera   = false;
+	double pdf_fwd     = 0.0;
+	double pdf_rev     = 0.0;
+};
+
+// Matches GpuCamAux.
+struct BDPTCamera {
+	point3 origin, lower_left;
+	vec3   horizontal, vertical, forward;
+	double img_plane_dist;  // aperture to image plane, in pixel units
+	double mis_scale;       // 1/(W*H)
+	int    W, H;
+};
+
+static BDPTCamera make_bdpt_camera(const camera& cam, int W, int H) {
+	BDPTCamera a;
+	a.origin     = cam.get_origin();
+	a.lower_left = cam.get_lower_left();
+	a.horizontal = cam.get_horizontal();
+	a.vertical   = cam.get_vertical();
+	point3 center = a.lower_left + 0.5*a.horizontal + 0.5*a.vertical;
+	vec3   d      = center - a.origin;
+	double focal  = d.length();
+	a.forward        = d / focal;
+	a.img_plane_dist = focal * (double)W / a.horizontal.length();
+	a.mis_scale      = 1.0 / ((double)W * (double)H);
+	a.W = W; a.H = H;
+	return a;
+}
+
+// Solid-angle density of a primary ray, one per pixel.
+static double cam_pdf_dir(const BDPTCamera& c, const vec3& dir_unit) {
+	double ct = dot(c.forward, dir_unit);
+	if (ct <= 1e-9) return 0.0;
+	return (c.img_plane_dist * c.img_plane_dist) / (ct*ct*ct);
+}
+
+// Per image rather than per pixel: W*H light subpaths may land anywhere, so the
+// camera technique carries an extra 1/(W*H). Estimators use the form above.
+static double cam_pdf_dir_mis(const BDPTCamera& c, const vec3& dir_unit) {
+	return cam_pdf_dir(c, dir_unit) * c.mis_scale;
+}
+
+static bool project_to_pixel(const BDPTCamera& c, const point3& p,
+							  double& rx, double& ry) {
+	vec3 d = p - c.origin;
+	if (dot(c.forward, d) <= 1e-9) return false;
+	vec3   nrm   = cross(c.horizontal, c.vertical);
+	double denom = dot(d, nrm);
+	if (std::abs(denom) < 1e-12) return false;
+	double lambda = dot(c.lower_left - c.origin, nrm) / denom;
+	if (lambda <= 0.0) return false;
+	vec3   q = c.origin + lambda*d - c.lower_left;
+	double s = dot(q, c.horizontal) / c.horizontal.length_squared();
+	double t = dot(q, c.vertical)   / c.vertical.length_squared();
+	if (s < 0.0 || s >= 1.0 || t < 0.0 || t >= 1.0) return false;
+	rx = s * (double)(c.W - 1);
+	ry = t * (double)(c.H - 1);
+	return true;
+}
+
+static double remap0(double f) { return f != 0.0 ? f : 1.0; }
+
+static double convert_density(double pdf, const point3& from,
+							   const point3& to, const vec3& to_n,
+							   bool to_on_surface) {
+	vec3   w  = to - from;
+	double d2 = w.length_squared();
+	if (d2 <= 1e-12) return 0.0;
+	double inv = 1.0 / d2;
+	if (to_on_surface) pdf *= std::abs(dot(to_n, w * std::sqrt(inv)));
+	return pdf * inv;
+}
+
 static bool visible(const point3& p, const point3& q,
 					const std::shared_ptr<hittable>& world) {
 	vec3   d    = q - p;
@@ -30,235 +120,447 @@ static bool visible(const point3& p, const point3& q,
 	if (dist < 1e-6) return true;
 	hit_record shadow;
 	return !world->hit(ray(p, d/dist, 0.0),
-					   interval(1e-4, dist - 1e-4), shadow);
+					   interval(BDPT_RAY_EPS, dist - BDPT_RAY_EPS), shadow);
 }
 
-int trace_camera_path(
-	const ray& r,
-	const color& initial_beta,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	int max_depth,
-	std::vector<PathVertex>& path
-) {
-	path.clear();
-	path.push_back(PathVertex::make_camera(r.origin()));
-
-	ray   cur = r;
-	color beta = initial_beta;
-	double pdf_fwd = 1.0;
-
-	for (int depth = 0; depth < max_depth; ++depth) {
+// Which side emits: flip_face can reverse the geometric normal, so probe both.
+static bool probe_emission(const std::shared_ptr<hittable>& world,
+							const point3& p, const vec3& ng,
+							vec3& n_emit, color& Le) {
+	for (int side = 0; side < 2; ++side) {
+		vec3   nn = (side == 0) ? ng : -ng;
+		point3 o  = p + nn * 1e-3;
+		ray    probe(o, -nn, 0.0);
 		hit_record rec;
-		if (!world->hit(cur, interval(1e-4, infinity), rec)) break;
+		if (world->hit(probe, interval(1e-6, 1e-2), rec) && rec.mat_ptr) {
+			color e = rec.mat_ptr->emitted(probe, rec, rec.u, rec.v, rec.p);
+			if (e.length_squared() > 0.0) { n_emit = nn; Le = e; return true; }
+		}
+	}
+	return false;
+}
 
-		PathVertex v = PathVertex::from_hit(rec, beta, pdf_fwd);
-		path.push_back(v);
+static int pick_light(const std::shared_ptr<hittable_list>& lights,
+					   double u, int& n_usable) {
+	n_usable = 0;
+	for (const auto& o : lights->objects) if (o->area() > 0.0) ++n_usable;
+	if (n_usable == 0) return -1;
+	int want = std::min((int)(u * n_usable), n_usable - 1);
+	int seen = 0;
+	for (int i = 0; i < (int)lights->objects.size(); ++i) {
+		if (lights->objects[i]->area() <= 0.0) continue;
+		if (seen == want) return i;
+		++seen;
+	}
+	return -1;
+}
 
-		color Le = rec.mat_ptr->emitted(cur, rec, rec.u, rec.v, rec.p);
-		if (Le.length_squared() > 0.0) break;
+static bool sample_light_point(const std::shared_ptr<hittable_list>& lights,
+								const std::shared_ptr<hittable>& world,
+								point3& pos, vec3& nrm, color& Le,
+								double& pdf_pos) {
+	if (!lights || lights->objects.empty()) return false;
+	int n_usable = 0;
+	int li = pick_light(lights, random_double(), n_usable);
+	if (li < 0) return false;
 
-		BSDFSample bs = rec.mat_ptr->sample(cur, rec);
-		if (bs.pdf <= 1e-10 || !is_valid(bs.f)) break;
+	const auto& L = lights->objects[li];
+	vec3 ng;
+	pos = L->sample_area(random_double(), random_double(), ng);
+	if (!probe_emission(world, pos, ng, nrm, Le)) return false;
 
-		double cos_t = std::abs(dot(rec.normal, bs.wi));
-		color new_beta = beta * bs.f * cos_t / bs.pdf;
-		if (!is_valid(new_beta)) break;
-		beta = new_beta;
+	double a = L->area();
+	if (a <= 0.0) return false;
+	pdf_pos = 1.0 / (a * (double)n_usable);
+	return true;
+}
 
-		path.back().delta = bs.is_delta;
+static double pdf_light_origin(const std::shared_ptr<hittable_list>& lights,
+								const point3& p) {
+	if (!lights) return 0.0;
+	int n_usable = 0;
+	for (const auto& o : lights->objects) if (o->area() > 0.0) ++n_usable;
+	if (n_usable == 0) return 0.0;
+	for (const auto& o : lights->objects) {
+		if (o->area() > 0.0 && o->contains_point(p))
+			return 1.0 / (o->area() * (double)n_usable);
+	}
+	return 0.0;
+}
+
+// Area density at `next` of the emission leaving light vertex lv.
+static double pdf_light_dir(const BDPTVertex& lv, const BDPTVertex& next) {
+	vec3   w  = next.p - lv.p;
+	double d2 = w.length_squared();
+	if (d2 <= 1e-12) return 0.0;
+	double inv = 1.0 / d2;
+	w = w * std::sqrt(inv);
+	double cos_l = dot(lv.n, w);
+	if (cos_l <= 0.0) return 0.0;
+	double pdf = (cos_l / pi) * inv;
+	if (!next.is_camera) pdf *= std::abs(dot(next.n, w));
+	return pdf;
+}
+
+static hit_record fake_rec(const BDPTVertex& v) {
+	hit_record rec;
+	rec.p = v.p; rec.normal = v.n; rec.u = 0.0; rec.v = 0.0;
+	rec.front_face = true; rec.mat_ptr = v.mat;
+	return rec;
+}
+
+static double vertex_pdf(const BDPTCamera& cam,
+						  const BDPTVertex* prev,
+						  const BDPTVertex& cur,
+						  const BDPTVertex& next) {
+	if (cur.is_light_ep) return pdf_light_dir(cur, next);
+
+	vec3   wn = next.p - cur.p;
+	double d2 = wn.length_squared();
+	if (d2 <= 1e-12) return 0.0;
+	wn = wn / std::sqrt(d2);
+
+	double pdf_dir = 0.0;
+	if (cur.is_camera) {
+		pdf_dir = cam_pdf_dir_mis(cam, wn);
+	} else {
+		if (!prev || !cur.mat) return 0.0;
+		vec3 wp = prev->p - cur.p;
+		if (wp.length_squared() <= 1e-12) return 0.0;
+		wp = unit_vector(wp);
+		pdf_dir = cur.mat->pdf_dir(wp, wn, fake_rec(cur));
+	}
+	return convert_density(pdf_dir, cur.p, next.p, next.n, !next.is_camera);
+}
+
+static int random_walk(const std::shared_ptr<hittable>& world,
+						ray r, color beta, double pdf_dir,
+						int max_verts, BDPTVertex* path, int idx) {
+	double pdf_fwd = pdf_dir, pdf_rev = 0.0;
+
+	while (idx < max_verts) {
+		hit_record rec;
+		if (!world->hit(r, interval(BDPT_RAY_EPS, infinity), rec)) break;
+		if (!rec.mat_ptr) break;
+
+		BDPTVertex& v    = path[idx];
+		BDPTVertex& prev = path[idx-1];
+
+		v.p           = rec.p;
+		v.n           = rec.normal;
+		v.beta        = beta;
+		v.Le          = rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
+		v.mat         = rec.mat_ptr;
+		v.delta       = false;
+		v.is_emissive = v.Le.length_squared() > 0.0;
+		v.is_light_ep = false;
+		v.is_camera   = false;
+		v.pdf_fwd     = convert_density(pdf_fwd, prev.p, v.p, v.n, true);
+		v.pdf_rev     = 0.0;
+
+		++idx;
+		if (idx >= max_verts) break;
+
+		vec3       wo = -unit_vector(r.direction());
+		BSDFSample bs = rec.mat_ptr->sample_dir(wo, rec);
+		if (bs.pdf <= 0.0 || !is_valid(bs.f) || bs.f.length_squared() <= 0.0) break;
+
 		pdf_fwd = bs.pdf;
+		pdf_rev = bs.is_delta ? 0.0 : rec.mat_ptr->pdf_dir(bs.wi, wo, rec);
+		if (bs.is_delta) { v.delta = true; pdf_fwd = 0.0; }
 
-		if (depth >= 3) {
-			double q = std::clamp(beta.max_component(), 0.05, 0.95);
-			if (random_double() > q) break;
-			beta /= q;
-		}
-		cur = ray(rec.p, bs.wi, cur.time());
+		color nb = beta * bs.f * (std::abs(dot(rec.normal, bs.wi)) / bs.pdf);
+		if (!is_valid(nb) || nb.length_squared() <= 0.0) break;
+		beta = nb;
+
+		prev.pdf_rev = convert_density(pdf_rev, v.p, prev.p, prev.n,
+									   !prev.is_camera);
+		r = ray(rec.p, bs.wi, r.time());
 	}
-	return (int)path.size();
+	return idx;
 }
 
-int trace_light_path(
-	const std::shared_ptr<hittable_list>& lights,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	int max_depth,
-	std::vector<PathVertex>& path
-) {
-	path.clear();
-	if (!lights || lights->objects.empty()) return 0;
+static int generate_camera_subpath(const std::shared_ptr<hittable>& world,
+									const BDPTCamera& cam, const ray& r,
+									int max_verts, BDPTVertex* path) {
+	if (max_verts <= 0) return 0;
+	BDPTVertex& v0 = path[0];
+	v0 = BDPTVertex();
+	v0.p         = cam.origin;
+	v0.n         = cam.forward;
+	v0.beta      = color(1,1,1);
+	v0.is_camera = true;
+	v0.pdf_fwd   = 1.0;   // pinhole
+	if (max_verts == 1) return 1;
 
-	int n_lights = (int)lights->objects.size();
-	int li       = std::min((int)(random_double()*n_lights), n_lights-1);
-	auto& light  = lights->objects[li];
-	double sel_pdf = 1.0 / n_lights;
-
-	point3 origin(278, 100, 278);
-	vec3   to_l  = light->random(origin);
-	double dist  = to_l.length();
-	if (dist < 1e-6) return 0;
-	vec3 wi = to_l / dist;
-
-	hit_record lrec;
-	if (!world->hit(ray(origin, wi, 0.0), interval(0.001, dist+1.0), lrec)) return 0;
-
-	color Le = lrec.mat_ptr->emitted(ray(origin,wi,0.0), lrec,
-									  lrec.u, lrec.v, lrec.p);
-	if (Le.length_squared() < 1e-10) return 0;
-
-	double pdf_area = light->pdf_value(origin, wi) * sel_pdf;
-	if (pdf_area <= 1e-10) return 0;
-
-	path.push_back(PathVertex::make_light(lrec.p, lrec.normal, Le, pdf_area));
-
-	onb uvw; uvw.build_from_w(lrec.normal);
-	vec3 wo = uvw.local(random_cosine_direction());
-	double cos_emit = std::max(dot(lrec.normal, wo), 0.0);
-	if (cos_emit < 1e-6) return (int)path.size();
-
-	double pdf_emit = cos_emit / pi;
-	color beta = Le * cos_emit / (pdf_area * pdf_emit);
-	if (!is_valid(beta)) return (int)path.size();
-
-	ray cur(lrec.p, wo, 0.0);
-
-	for (int depth = 0; depth < max_depth-1; ++depth) {
-		hit_record rec;
-		if (!world->hit(cur, interval(1e-4, infinity), rec)) break;
-
-		PathVertex v = PathVertex::from_hit(rec, beta, pdf_emit);
-		path.push_back(v);
-
-		BSDFSample bs = rec.mat_ptr->sample(cur, rec);
-		if (bs.pdf <= 1e-10 || !is_valid(bs.f)) break;
-
-		double cos_t = std::abs(dot(rec.normal, bs.wi));
-		color new_beta = beta * bs.f * cos_t / bs.pdf;
-		if (!is_valid(new_beta)) break;
-		beta = new_beta;
-
-		path.back().delta = bs.is_delta;
-
-		if (depth >= 2) {
-			double q = std::clamp(beta.max_component(), 0.05, 0.95);
-			if (random_double() > q) break;
-			beta /= q;
-		}
-		cur = ray(rec.p, bs.wi, 0.0);
-		pdf_emit = bs.pdf;
-	}
-	return (int)path.size();
+	double pdf_dir = cam_pdf_dir_mis(cam, unit_vector(r.direction()));
+	if (pdf_dir <= 0.0) return 1;
+	return random_walk(world, r, color(1,1,1), pdf_dir, max_verts, path, 1);
 }
 
-color connect(
-	const std::vector<PathVertex>& cp, int t,
-	const std::vector<PathVertex>& lp, int s,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	const color& background
-) {
-	if (t <= 0 || t > (int)cp.size()) return color(0,0,0);
-	const PathVertex& qv = cp[t-1];
+static int generate_light_subpath(const std::shared_ptr<hittable>& world,
+								   const std::shared_ptr<hittable_list>& lights,
+								   int max_verts, BDPTVertex* path) {
+	if (max_verts <= 0) return 0;
+	point3 lp; vec3 ln; color Le; double pdf_pos;
+	if (!sample_light_point(lights, world, lp, ln, Le, pdf_pos)) return 0;
+
+	BDPTVertex& v0 = path[0];
+	v0 = BDPTVertex();
+	v0.p           = lp;
+	v0.n           = ln;
+	v0.beta        = Le;
+	v0.Le          = Le;
+	v0.is_emissive = true;
+	v0.is_light_ep = true;
+	v0.pdf_fwd     = pdf_pos;
+	if (max_verts == 1) return 1;
+
+	onb uvw; uvw.build_from_w(ln);
+	vec3   dir   = unit_vector(uvw.local(random_cosine_direction()));
+	double cos_e = dot(ln, dir);
+	if (cos_e <= 1e-9) return 1;
+
+	double pdf_dir = cos_e / pi;
+	color  beta    = Le * (cos_e / (pdf_pos * pdf_dir));
+	if (!is_valid(beta)) return 1;
+	return random_walk(world, ray(lp, dir, 0.0), beta, pdf_dir, max_verts, path, 1);
+}
+
+static double bdpt_mis_weight(const BDPTCamera& cam,
+							   const std::shared_ptr<hittable_list>& lights,
+							   BDPTVertex* camv, int t,
+							   BDPTVertex* lightv, int s,
+							   const BDPTVertex& sampled, bool has_sampled) {
+	if (s + t == 2) return 1.0;
+
+	BDPTVertex* qs      = (s > 0) ? &lightv[s-1] : nullptr;
+	BDPTVertex* pt      = (t > 0) ? &camv[t-1]   : nullptr;
+	BDPTVertex* qsMinus = (s > 1) ? &lightv[s-2] : nullptr;
+	BDPTVertex* ptMinus = (t > 1) ? &camv[t-2]   : nullptr;
+
+	BDPTVertex  save_ep;
+	BDPTVertex* ep_slot = nullptr;
+	if (has_sampled) {
+		if      (s == 1) ep_slot = &lightv[0];
+		else if (t == 1) ep_slot = &camv[0];
+		if (ep_slot) {
+			save_ep  = *ep_slot;
+			*ep_slot = sampled;
+			if (s == 1) qs = &lightv[0];
+			if (t == 1) pt = &camv[0];
+		}
+	}
+
+	bool   save_pt_delta = false, save_qs_delta = false;
+	double save_pt_rev = 0.0, save_ptM_rev = 0.0;
+	double save_qs_rev = 0.0, save_qsM_rev = 0.0;
+
+	if (pt) { save_pt_delta = pt->delta; pt->delta = false; }
+	if (qs) { save_qs_delta = qs->delta; qs->delta = false; }
+
+	if (pt) {
+		save_pt_rev = pt->pdf_rev;
+		pt->pdf_rev = (s > 0) ? vertex_pdf(cam, qsMinus, *qs, *pt)
+							  : pdf_light_origin(lights, pt->p);
+	}
+	if (ptMinus) {
+		save_ptM_rev = ptMinus->pdf_rev;
+		ptMinus->pdf_rev = (s > 0) ? vertex_pdf(cam, qs, *pt, *ptMinus)
+								   : pdf_light_dir(*pt, *ptMinus);
+	}
+	if (qs) {
+		save_qs_rev = qs->pdf_rev;
+		qs->pdf_rev = vertex_pdf(cam, ptMinus, *pt, *qs);
+	}
+	if (qsMinus) {
+		save_qsM_rev = qsMinus->pdf_rev;
+		qsMinus->pdf_rev = vertex_pdf(cam, pt, *qs, *qsMinus);
+	}
+
+	double sumRi = 0.0, ri = 1.0;
+	for (int i = t - 1; i > 0; --i) {
+		ri *= remap0(camv[i].pdf_rev) / remap0(camv[i].pdf_fwd);
+		if (!camv[i].delta && !camv[i-1].delta) sumRi += ri;
+	}
+	ri = 1.0;
+	for (int i = s - 1; i >= 0; --i) {
+		ri *= remap0(lightv[i].pdf_rev) / remap0(lightv[i].pdf_fwd);
+		bool prev_delta = (i > 0) ? lightv[i-1].delta : false;
+		if (!lightv[i].delta && !prev_delta) sumRi += ri;
+	}
+
+	if (qsMinus) qsMinus->pdf_rev = save_qsM_rev;
+	if (qs)      { qs->pdf_rev = save_qs_rev; qs->delta = save_qs_delta; }
+	if (ptMinus) ptMinus->pdf_rev = save_ptM_rev;
+	if (pt)      { pt->pdf_rev = save_pt_rev; pt->delta = save_pt_delta; }
+	if (ep_slot) *ep_slot = save_ep;
+
+	return 1.0 / (1.0 + sumRi);
+}
+
+// MIS-weighted contribution of (s,t); for t == 1 the result belongs to rx/ry.
+static color connect_bdpt(const std::shared_ptr<hittable>& world,
+						   const std::shared_ptr<hittable_list>& lights,
+						   const BDPTCamera& cam,
+						   BDPTVertex* camv, int t,
+						   BDPTVertex* lightv, int s,
+						   double& rx, double& ry) {
+	color      L(0,0,0);
+	BDPTVertex sampled;
+	bool       has_sampled = false;
+
+	if (t > 1 && s != 0 && camv[t-1].is_light_ep) return color(0,0,0);
 
 	if (s == 0) {
-		if (!qv.mat) return color(0,0,0);
-		hit_record dummy; dummy.p=qv.p; dummy.normal=qv.n;
-		dummy.front_face=true; dummy.mat_ptr=qv.mat;
-		ray dr(qv.p-qv.n*0.001, qv.n, 0.0);
-		color Le = qv.mat->emitted(dr, dummy, qv.u, qv.v, qv.p);
-		return safe(qv.beta * Le);
+		const BDPTVertex& pt = camv[t-1];
+		if (!pt.is_emissive) return color(0,0,0);
+		L = pt.beta * pt.Le;
+
+	} else if (t == 1) {
+		const BDPTVertex& qs = lightv[s-1];
+		if (qs.delta || qs.is_light_ep || !qs.mat) return color(0,0,0);
+
+		vec3   d     = cam.origin - qs.p;
+		double dist2 = d.length_squared();
+		if (dist2 < 1e-10) return color(0,0,0);
+		double dist = std::sqrt(dist2);
+		vec3   wi   = d / dist;
+
+		if (!project_to_pixel(cam, qs.p, rx, ry)) return color(0,0,0);
+
+		// Camera's area density here, also the splat Jacobian.
+		double pdf_cam_A = cam_pdf_dir(cam, -wi) * std::abs(dot(qs.n, wi)) / dist2;
+		if (pdf_cam_A <= 0.0) return color(0,0,0);
+
+		vec3  wo = unit_vector(lightv[s-2].p - qs.p);
+		color f  = qs.mat->f_dir(wo, wi, fake_rec(qs));
+		if (f.length_squared() <= 0.0) return color(0,0,0);
+		if (!visible(qs.p, cam.origin, world)) return color(0,0,0);
+
+		L = qs.beta * f * pdf_cam_A;
+
+		sampled = BDPTVertex();
+		sampled.p         = cam.origin;
+		sampled.n         = cam.forward;
+		sampled.beta      = color(1,1,1);
+		sampled.is_camera = true;
+		sampled.pdf_fwd   = 1.0;
+		has_sampled       = true;
+
+	} else if (s == 1) {
+		const BDPTVertex& pt = camv[t-1];
+		if (pt.delta || !pt.mat) return color(0,0,0);
+
+		point3 lp; vec3 ln; color Le; double pdf_pos;
+		if (!sample_light_point(lights, world, lp, ln, Le, pdf_pos))
+			return color(0,0,0);
+
+		vec3   d     = lp - pt.p;
+		double dist2 = d.length_squared();
+		if (dist2 < 1e-10) return color(0,0,0);
+		double dist = std::sqrt(dist2);
+		vec3   wi   = d / dist;
+
+		double cos_l = dot(ln, -wi);
+		if (cos_l <= 1e-9) return color(0,0,0);
+		double pdf_solid = pdf_pos * dist2 / cos_l;
+		if (pdf_solid <= 0.0) return color(0,0,0);
+
+		vec3  wo = unit_vector(camv[t-2].p - pt.p);
+		color f  = pt.mat->f_dir(wo, wi, fake_rec(pt));
+		if (f.length_squared() <= 0.0) return color(0,0,0);
+		if (!visible(pt.p, lp, world)) return color(0,0,0);
+
+		L = pt.beta * f * Le * (std::abs(dot(pt.n, wi)) / pdf_solid);
+
+		sampled = BDPTVertex();
+		sampled.p           = lp;
+		sampled.n           = ln;
+		sampled.beta        = Le / pdf_solid;
+		sampled.Le          = Le;
+		sampled.is_emissive = true;
+		sampled.is_light_ep = true;
+		sampled.pdf_fwd     = pdf_pos;
+		has_sampled         = true;
+
+	} else {
+		const BDPTVertex& qs = lightv[s-1];
+		const BDPTVertex& pt = camv[t-1];
+		if (qs.delta || pt.delta || !qs.mat || !pt.mat) return color(0,0,0);
+
+		vec3   d     = qs.p - pt.p;
+		double dist2 = d.length_squared();
+		if (dist2 < 1e-10) return color(0,0,0);
+		double dist = std::sqrt(dist2);
+		vec3   wi   = d / dist;
+
+		vec3  wo_pt = unit_vector(camv[t-2].p   - pt.p);
+		vec3  wo_qs = unit_vector(lightv[s-2].p - qs.p);
+		color f_pt  = pt.mat->f_dir(wo_pt,  wi, fake_rec(pt));
+		if (f_pt.length_squared() <= 0.0) return color(0,0,0);
+		color f_qs  = qs.mat->f_dir(wo_qs, -wi, fake_rec(qs));
+		if (f_qs.length_squared() <= 0.0) return color(0,0,0);
+
+		double G = std::abs(dot(pt.n, wi)) * std::abs(dot(qs.n, -wi)) / dist2;
+		if (G <= 0.0) return color(0,0,0);
+		if (!visible(pt.p, qs.p, world)) return color(0,0,0);
+
+		L = pt.beta * f_pt * f_qs * qs.beta * G;
 	}
 
-	if (s <= 0 || s > (int)lp.size()) return color(0,0,0);
-	const PathVertex& pv = lp[s-1];
+	if (!is_valid(L) || L.length_squared() <= 0.0) return color(0,0,0);
 
-	if (!qv.is_connectable() || !pv.is_connectable()) return color(0,0,0);
-	if (!visible(qv.p, pv.p, world)) return color(0,0,0);
-
-	vec3   d     = pv.p - qv.p;
-	double dist2 = d.length_squared();
-	if (dist2 < 1e-8) return color(0,0,0);
-
-	vec3 d_hat = d / std::sqrt(dist2);
-
-	if (s == 1) {
-		if (!pv.is_light()) return color(0,0,0);
-		double cos_q = std::abs(dot(qv.n, d_hat));
-		double cos_p = std::abs(dot(pv.n, -d_hat));
-		ray dummy_ray(qv.p - d_hat*0.001, d_hat, 0.0);
-		hit_record qrec; qrec.p=qv.p; qrec.normal=qv.n;
-		qrec.front_face=true; qrec.mat_ptr=qv.mat;
-		color f_q = qv.mat ? qv.mat->f(dummy_ray, d_hat, qrec) : color(0,0,0);
-		color contrib = qv.beta * f_q * pv.beta * cos_q * cos_p / dist2;
-		return safe(contrib);
-	}
-
-	vec3 wo_q = (t >= 2) ? unit_vector(qv.p - cp[t-2].p) : d_hat;
-	vec3 wo_p = (s >= 2) ? unit_vector(pv.p - lp[s-2].p) : -d_hat;
-
-	color f_q = qv.f(wo_q,  d_hat);
-	color f_p = pv.f(wo_p, -d_hat);
-
-	double cos_q = std::abs(dot(qv.n,  d_hat));
-	double cos_p = std::abs(dot(pv.n, -d_hat));
-	double G     = cos_q * cos_p / dist2;
-
-	if (G < 1e-10) return color(0,0,0);
-
-	color contrib = qv.beta * f_q * G * f_p * pv.beta;
-	return safe(contrib);
-}
-
-double mis_weight(
-	const std::vector<PathVertex>& cp, int t,
-	const std::vector<PathVertex>& lp, int s,
-	const PathVertex&
-) {
-	int n = s + t;
-	int valid = 0;
-	for (int tt = 1; tt <= n-1 && tt <= (int)cp.size(); ++tt) {
-		int ss = n - tt;
-		if (ss < 0 || ss > (int)lp.size()) continue;
-		bool c_ok = (tt == 1) || !cp[tt-1].delta;
-		bool l_ok = (ss == 0) || !lp[ss-1].delta;
-		if (c_ok && l_ok) ++valid;
-	}
-	if (!cp.empty() && !cp.back().delta) ++valid;
-	return valid > 0 ? 1.0 / valid : 1.0;
+	double w = bdpt_mis_weight(cam, lights, camv, t, lightv, s,
+							   sampled, has_sampled);
+	if (!(w > 0.0)) return color(0,0,0);
+	return L * w;
 }
 
 color bdpt_Li(
 	const ray& camera_ray,
-	const color& background,
+	const camera& cam,
 	const std::shared_ptr<hittable>& world,
 	const std::shared_ptr<hittable_list>& lights,
-	const std::shared_ptr<env_light>& env,
-	int max_depth
+	int max_depth,
+	BDPTSplatBuffer& splat
 ) {
-	std::vector<PathVertex> cp, lp;
-	cp.reserve(max_depth+2);
-	lp.reserve(max_depth+2);
+	if (max_depth > MAX_BDPT_DEPTH) max_depth = MAX_BDPT_DEPTH;
 
-	trace_camera_path(camera_ray, color(1,1,1), world, env, max_depth, cp);
-	trace_light_path(lights, world, env, max_depth, lp);
+	BDPTCamera bc = make_bdpt_camera(cam, splat.W, splat.H);
+
+	BDPTVertex camv  [MAX_BDPT_VERTS];
+	BDPTVertex lightv[MAX_BDPT_VERTS];
+
+	int cam_max = std::min(max_depth + 2, MAX_BDPT_VERTS);
+	int lit_max = std::min(max_depth + 2, MAX_BDPT_VERTS);
+
+	int nt = generate_camera_subpath(world, bc, camera_ray, cam_max, camv);
+	int ns = generate_light_subpath(world, lights, lit_max, lightv);
+
+	// One light subpath per pixel; the splat spreads over the film, hence 1/(W*H).
+	double inv_light_paths = bc.mis_scale;
 
 	color L(0,0,0);
 
-	for (int t = 1; t <= (int)cp.size(); ++t) {
-		for (int s = 0; s <= (int)lp.size(); ++s) {
-			int depth = s + t - 2;
-			if (depth < 0 || depth > max_depth) continue;
+	for (int t = 1; t <= nt; ++t) {
+		for (int s = 0; s <= ns; ++s) {
+			int depth = t + s - 2;
+			if ((s == 1 && t == 1) || depth < 0 || depth > max_depth) continue;
 
-			color contrib = connect(cp, t, lp, s, world, env, background);
-			if (!is_valid(contrib) || contrib.length_squared() < 1e-20) continue;
+			double rx = 0.0, ry = 0.0;
+			color c = connect_bdpt(world, lights, bc, camv, t, lightv, s, rx, ry);
+			if (c.length_squared() <= 0.0) continue;
 
-			double w = mis_weight(cp, t, lp, s,
-								   s > 0 ? lp[s-1] : cp[t-1]);
-			L += contrib * w;
+			if (t == 1) {
+				// Clamp after the 1/(W*H): the contribution is carried undivided.
+				splat.add((int)(rx + 0.5), (int)(ry + 0.5),
+						  safe(c * inv_light_paths));
+			} else {
+				L += safe(c);
+			}
 		}
 	}
-
 	return safe(L);
 }
 
@@ -275,15 +577,18 @@ color Li(
 	color beta (1,1,1);
 	bool  specular_bounce = false;
 	double last_bsdf_pdf  = 0.0;
+	point3 prev_p         = initial_ray.origin();
 
 	for (int depth = 0; depth < max_depth; ++depth) {
 		hit_record rec;
 		if (!world->hit(r, interval(0.001, infinity), rec)) {
 			color Le = env ? env->Le(r.direction()) : background;
-			if (specular_bounce || !(lights && !lights->objects.empty()))
+			if (specular_bounce || depth == 0
+				|| !(lights && !lights->objects.empty()))
 				L += beta * Le;
 			else {
-				double lp = lights->pdf_value(rec.p, r.direction());
+				// rec is unwritten on a miss; use the previous vertex.
+				double lp = lights->pdf_value(prev_p, r.direction());
 				L += beta * Le * power_heuristic(last_bsdf_pdf, lp);
 			}
 			break;
@@ -291,10 +596,13 @@ color Li(
 
 		color emitted = rec.mat_ptr->emitted(r, rec, rec.u, rec.v, rec.p);
 		if (emitted.length_squared() > 0.0) {
-			if (specular_bounce) L += beta * emitted;
+			if (specular_bounce || depth == 0) L += beta * emitted;
 			else {
+				// MIS partner is NEE's density at the previous vertex. From rec.p
+				// (already on the light) it returns 0, giving this hit full
+				// weight on top of NEE.
 				double lp = (lights && !lights->objects.empty())
-							? lights->pdf_value(rec.p, r.direction()) : 0.0;
+							? lights->pdf_value(prev_p, r.direction()) : 0.0;
 				L += beta * emitted * power_heuristic(last_bsdf_pdf, lp);
 			}
 		}
@@ -336,6 +644,7 @@ color Li(
 			if (random_double() > s) break;
 			beta /= s;
 		}
+		prev_p = rec.p;
 		r = ray(rec.p, bs.wi, r.time());
 	}
 	return L;

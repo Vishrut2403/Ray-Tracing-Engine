@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <cmath>
 #include "hittable.h"
 #include "acceleration/aabb.h"
 #include "core/rtweekend.h"
@@ -111,6 +112,17 @@ public:
 		);
 
 		return random_point - origin;
+	}
+
+	virtual double area() const override { return (x1-x0)*(y1-y0); }
+	virtual point3 sample_area(double u1, double u2, vec3& ng) const override {
+		ng = vec3(0,0,1);
+		return point3(x0 + u1*(x1-x0), y0 + u2*(y1-y0), k);
+	}
+	virtual bool contains_point(const point3& p) const override {
+		return std::fabs(p.z()-k) < 1e-3
+			&& p.x() >= x0-1e-3 && p.x() <= x1+1e-3
+			&& p.y() >= y0-1e-3 && p.y() <= y1+1e-3;
 	}
 
 private:

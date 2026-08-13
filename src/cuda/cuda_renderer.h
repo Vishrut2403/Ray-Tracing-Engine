@@ -7,6 +7,13 @@
 #include "viewer/preview_window.h"
 #include <string>
 
+bool cuda_supports_scene(const std::string& name);
+
+// PATH_TRACER (gpu_Li) is the default: validated against the CPU and BDPT to
+// within 1.5%. RESTIR is the fast approximate mode — its GI is a single-bounce
+// biased estimator. BDPT is selected by the scene regardless.
+enum class GpuIntegrator { PATH_TRACER, RESTIR };
+
 void cuda_render(const Scene& scene,
 				 Framebuffer& fb,
 				 const camera& cam,
@@ -14,4 +21,5 @@ void cuda_render(const Scene& scene,
 				 int spp,
 				 int max_depth,
 				 PreviewWindow* preview = nullptr,
-				 const std::string& scene_name = "cornell");
+				 const std::string& scene_name = "cornell",
+				 GpuIntegrator integrator = GpuIntegrator::PATH_TRACER);

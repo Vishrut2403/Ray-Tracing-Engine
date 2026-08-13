@@ -45,7 +45,7 @@ __global__ void restir_gi_initial_kernel(
 	gbuf_rec.t          = (double)gbuf.depth;
 
 	GpuBSDFSample bs = gpu_sample(mat,
-		ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, gbuf.wo, 0.0),
+		ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, -gbuf.wo, 0.0),
 		gbuf_rec, &rng);
 
 	if (bs.pdf <= 0.0) { rng_states[idx] = rng; return; }
@@ -65,7 +65,10 @@ __global__ void restir_gi_initial_kernel(
 		vec3 L_o(0,0,0);
 		vec3 Le = gpu_emitted(materials[irec.mat_id], irec.front_face);
 		if (Le.length_squared() > 0.0) {
-			L_o = Le;
+			// ReSTIR DI already integrates the whole area-light term here, with
+			// no MIS partner, so counting this bounce too double-counts direct
+			// lighting. With no area lights, DI contributes nothing — keep it.
+			if (n_lights == 0) L_o = Le;
 		} else if (n_lights > 0) {
 			vec3 to_l = gpu_light_random(hittables, light_ids,
 										  n_lights, irec.p, &rng);

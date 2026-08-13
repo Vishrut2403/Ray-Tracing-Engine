@@ -35,6 +35,22 @@ public:
 	) const = 0;
 	virtual double pdf_value(const point3&, const vec3&) const { return 0.0; }
 	virtual vec3   random(const point3&) const { return vec3(1,0,0); }
+
+	// Area sampling for BDPT: a light subpath starts on the emitter with no
+	// receiver, so pdf_value/random above do not apply. area() == 0 means the
+	// shape cannot start one.
+	virtual double area() const { return 0.0; }
+
+	// Uniform point on the surface; ng is geometric, the caller picks the
+	// emitting side (flip_face can reverse it).
+	virtual point3 sample_area(double, double, vec3& ng) const {
+		ng = vec3(0,1,0);
+		return point3(0,0,0);
+	}
+
+	// Recovers the area density of a light vertex a camera subpath landed on.
+	virtual bool contains_point(const point3&) const { return false; }
+
 	virtual ~hittable() = default;
 };
 #endif

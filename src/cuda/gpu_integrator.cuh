@@ -9,6 +9,8 @@
 #include "cuda/gpu_env_map.cuh"
 #include "cuda/gpu_triangle.h"
 #include "cuda/cuda_rand.cuh"
+#include "cuda/gpu_camera.cuh"
+#include "cuda/gpu_bdpt.cuh"
 
 #define RAY_OFFSET 0.02
 
@@ -71,6 +73,7 @@ __device__ vec3 gpu_Li(
 	vec3  beta (1,1,1);
 	bool  specular_bounce = false;
 	double last_bsdf_pdf  = 0.0;
+	vec3  prev_p          = initial_ray.origin();
 
 	for (int depth = 0; depth < max_depth; ++depth) {
 		GpuHitRecord rec;
@@ -80,13 +83,14 @@ __device__ vec3 gpu_Li(
 					  ? gpu_env_Le(*env_map, r.direction())
 					  : background;
 
-			if (specular_bounce || n_lights == 0) {
+			if (specular_bounce || n_lights == 0 || depth == 0) {
 				L = L + beta * Le;
 			} else {
+				// rec is unwritten on a miss; use the previous vertex.
 				double lp = (env_map && env_map->valid)
 							? (double)gpu_env_pdf(*env_map, r.direction())
 							: gpu_light_pdf(hittables, light_ids, n_lights,
-											rec.p, r.direction());
+											prev_p, r.direction());
 				L = L + beta * Le * gpu_power_heuristic(last_bsdf_pdf, lp);
 			}
 			break;
@@ -95,11 +99,14 @@ __device__ vec3 gpu_Li(
 		const GpuMaterial& mat = materials[rec.mat_id];
 		vec3 emitted = gpu_emitted(mat, rec.front_face);
 		if (emitted.length_squared() > 0.0) {
-			if (specular_bounce) {
+			if (specular_bounce || depth == 0) {
 				L = L + beta * emitted;
 			} else {
+				// MIS partner is NEE's density at the PREVIOUS vertex. From rec.p
+				// (already on the light) it re-intersects nothing and returns 0,
+				// giving this hit full weight on top of NEE.
 				double lp = gpu_light_pdf(hittables, light_ids, n_lights,
-										   rec.p, r.direction());
+										   prev_p, r.direction());
 				L = L + beta * emitted * gpu_power_heuristic(last_bsdf_pdf, lp);
 			}
 		}
@@ -177,28 +184,15 @@ __device__ vec3 gpu_Li(
 			beta = beta / survival;
 		}
 
+		prev_p = rec.p;
 		r = ray(rec.p, bs.wi, r.time());
 	}
 	return L;
 }
 
 #undef MESH_ARGS
-#undef RAY_OFFSET
 
-struct GpuCamera {
-	vec3   origin, lower_left, horizontal, vertical, u, v, w;
-	double lens_radius;
-};
-
-__device__ inline ray gpu_get_ray(const GpuCamera& cam, double s, double t,
-								   curandState* rng) {
-	vec3 rd     = cam.lens_radius * rand_in_unit_sphere(rng);
-	rd[2] = 0.0;
-	vec3 offset = cam.u * rd.x() + cam.v * rd.y();
-	return ray(cam.origin + offset,
-			   cam.lower_left + s*cam.horizontal + t*cam.vertical
-			   - cam.origin - offset, 0.0);
-}
+// GpuCamera and gpu_get_ray live in gpu_camera.cuh.
 
 __global__ void accumulate_kernel(
 	float* d_accum, int width, int height, int batch_spp, int max_depth,
@@ -236,3 +230,105 @@ __global__ void accumulate_kernel(
 	d_accum[id*3+2] += (float)pixel.z();
 	rand_states[id]  = rng;
 }
+
+// Firefly clamp, matching the ReSTIR shade kernel.
+__device__ inline vec3 bdpt_clamp(vec3 c) {
+	double lum = 0.2126*c.x() + 0.7152*c.y() + 0.0722*c.z();
+	if (!isfinite(lum) || lum < 0.0) return vec3(0,0,0);
+	if (lum > 50.0) return c * (50.0 / lum);
+	return c;
+}
+
+__global__ void accumulate_bdpt_kernel(
+	float* d_accum, int width, int height, int max_depth,
+	GpuCamera cam,
+	const GpuHittable*   hittables,  int n_hittables,
+	const GpuMaterial*   materials,
+	const int*           light_ids,  int n_lights,
+	curandState*         rand_states,
+	const GpuTriangle*   tris,
+	const GpuTriBVHNode* tri_bvh,
+	int                  tri_root,
+	int                  n_tris
+) {
+	int x = blockIdx.x * blockDim.x + threadIdx.x;
+	int y = blockIdx.y * blockDim.y + threadIdx.y;
+	if (x >= width || y >= height) return;
+
+	int         id  = y * width + x;
+	curandState rng = rand_states[id];
+
+	GpuCamAux aux = gpu_make_cam_aux(cam, width, height);
+
+	GpuBDPTScene sc;
+	sc.hittables   = hittables;
+	sc.n_hittables = n_hittables;
+	sc.materials   = materials;
+	sc.light_ids   = light_ids;
+	sc.n_lights    = n_lights;
+	sc.tris        = tris;
+	sc.tri_bvh     = tri_bvh;
+	sc.tri_root    = tri_root;
+	sc.n_tris      = n_tris;
+
+	GpuPathVertex camv  [MAX_BDPT_VERTS];
+	GpuPathVertex lightv[MAX_BDPT_VERTS];
+
+	// Every split must be representable or the MIS weights lose energy.
+	if (max_depth > MAX_BDPT_DEPTH) max_depth = MAX_BDPT_DEPTH;
+
+	int cam_max = min(max_depth + 2, MAX_BDPT_VERTS);
+	int lit_max = min(max_depth + 2, MAX_BDPT_VERTS);
+
+	double u = (x + rand_double(&rng)) / (width  - 1);
+	double v = (y + rand_double(&rng)) / (height - 1);
+	ray    cam_ray = gpu_get_ray(cam, u, v, &rng);
+
+	int nt = gpu_generate_camera_subpath(sc, aux, cam, cam_ray, cam_max,
+										 camv, &rng);
+	int ns = gpu_generate_light_subpath(sc, lit_max, lightv, &rng);
+
+	// One light subpath per thread (= per pixel); the splat spreads over the
+	// whole film, hence 1/(W*H).
+	double inv_light_paths = 1.0 / ((double)width * (double)height);
+
+	vec3 L(0,0,0);
+
+	for (int t = 1; t <= nt; ++t) {
+		for (int s = 0; s <= ns; ++s) {
+			int depth = t + s - 2;
+			if ((s == 1 && t == 1) || depth < 0 || depth > max_depth) continue;
+
+			double rx = 0.0, ry = 0.0;
+			vec3 c = gpu_connect_bdpt(sc, aux, cam, camv, t, lightv, s,
+									  &rng, rx, ry);
+			if (!(c.length_squared() > 0.0)) continue;
+
+			if (t == 1) {
+				int px = (int)(rx + 0.5);
+				int py = (int)(ry + 0.5);
+				if (px >= 0 && px < width && py >= 0 && py < height) {
+					// Clamp after the 1/(W*H): a t == 1 contribution is carried
+					// undivided and is W*H times larger.
+					vec3 sp  = bdpt_clamp(c * inv_light_paths);
+					int  sid = py * width + px;
+					atomicAdd(&d_accum[sid*3+0], (float)sp.x());
+					atomicAdd(&d_accum[sid*3+1], (float)sp.y());
+					atomicAdd(&d_accum[sid*3+2], (float)sp.z());
+				}
+			} else {
+				L = L + bdpt_clamp(c);
+			}
+		}
+	}
+
+	L = bdpt_clamp(L);
+
+	// Other threads splat here concurrently.
+	atomicAdd(&d_accum[id*3+0], (float)L.x());
+	atomicAdd(&d_accum[id*3+1], (float)L.y());
+	atomicAdd(&d_accum[id*3+2], (float)L.z());
+	rand_states[id] = rng;
+}
+
+#undef RAY_OFFSET

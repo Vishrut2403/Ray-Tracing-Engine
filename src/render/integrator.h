@@ -12,44 +12,34 @@
 
 class Framebuffer;
 
-int trace_camera_path(
-	const ray& r,
-	const color& initial_beta,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	int max_depth,
-	std::vector<PathVertex>& path
-);
+// Accumulator for BDPT's t == 1 strategy, which deposits into whatever pixel a
+// light vertex projects onto rather than the calling thread's. Atomic because
+// the tile loop is parallel.
+struct BDPTSplatBuffer {
+	int W = 0, H = 0;
+	std::vector<double> data;
 
-int trace_light_path(
-	const std::shared_ptr<hittable_list>& lights,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	int max_depth,
-	std::vector<PathVertex>& path
-);
+	void resize(int w, int h) { W = w; H = h; data.assign((size_t)w*h*3, 0.0); }
+	void add(int x, int y, const color& c) {
+		if (x < 0 || x >= W || y < 0 || y >= H) return;
+		size_t i = ((size_t)y*W + x)*3;
+		#pragma omp atomic
+		data[i+0] += c.x();
+		#pragma omp atomic
+		data[i+1] += c.y();
+		#pragma omp atomic
+		data[i+2] += c.z();
+	}
+};
 
-color connect(
-	const std::vector<PathVertex>& camera_path, int t,
-	const std::vector<PathVertex>& light_path,  int s,
-	const std::shared_ptr<hittable>& world,
-	const std::shared_ptr<env_light>& env,
-	const color& background
-);
-
-double mis_weight(
-	const std::vector<PathVertex>& camera_path, int t,
-	const std::vector<PathVertex>& light_path,  int s,
-	const PathVertex& sampled
-);
-
+// Returns this pixel's contribution; t == 1 contributions go to `splat`.
 color bdpt_Li(
 	const ray& camera_ray,
-	const color& background,
+	const camera& cam,
 	const std::shared_ptr<hittable>& world,
 	const std::shared_ptr<hittable_list>& lights,
-	const std::shared_ptr<env_light>& env,
-	int max_depth
+	int max_depth,
+	BDPTSplatBuffer& splat
 );
 
 color Li(

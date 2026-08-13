@@ -36,14 +36,16 @@ static color trace_camera_ray(
 		if (Le.length_squared()>0.0){direct=direct+beta*Le;return direct;}
 
 		BSDFSample bs = rec.mat_ptr->sample(cur,rec);
-		if (bs.pdf<=0.0) return direct;
 
-		if (bs.is_delta){
-			beta=beta*bs.f*std::abs(dot(rec.normal,bs.wi))/bs.pdf;
+		if (bs.pdf>0.0 && bs.is_delta){
+			// A delta lobe carries its whole weight in f; no cosine/pdf.
+			beta=beta*bs.f;
 			cur=ray(rec.p,bs.wi,cur.time());
 			continue;
 		}
 
+		// Record the visible point even if the sample failed — bailing out here
+		// leaves nothing for photons to reach and the surface renders black.
 		vp.p=rec.p; vp.n=rec.normal; vp.wo=-unit_vector(cur.direction());
 		vp.beta=beta; vp.u=rec.u; vp.v=rec.v; vp.mat=rec.mat_ptr; vp.valid=true;
 		return direct;
@@ -121,6 +123,9 @@ void PPMRenderer::render(
 			grid[hash3(x,y,z)].push_back(idx);
 		}
 
+		// The grid and every VisiblePoint are read-only here, so the only shared
+		// writes are phi/M (atomic below). random_double() is thread_local.
+#pragma omp parallel for schedule(dynamic,1024)
 		for (int pi=0;pi<photons_per_iter;++pi){
 			double lx=lx0+random_double()*(lx1-lx0);
 			double lz=lz0+random_double()*(lz1-lz0);
@@ -155,7 +160,9 @@ void PPMRenderer::render(
 							if ((px.vp.p-rec.p).length_squared()>px.R*px.R) continue;
 							if (dot(px.vp.n,-unit_vector(cur.direction()))<0) continue;
 
-							ray dr(px.vp.p-px.vp.wo*1e-3,px.vp.wo,0.0);
+							// material::f takes -ray.direction() as the view
+							// vector, so this ray must travel into the surface.
+							ray dr(px.vp.p+px.vp.wo*1e-3,-px.vp.wo,0.0);
 							hit_record drec;
 							drec.p=px.vp.p; drec.normal=px.vp.n;
 							drec.u=px.vp.u; drec.v=px.vp.v;
@@ -163,7 +170,14 @@ void PPMRenderer::render(
 							color f=px.vp.mat->f(dr,-unit_vector(cur.direction()),drec);
 							if (f.length_squared()<1e-12) continue;
 
-							phi[idx]=phi[idx]+px.vp.beta*f*flux;
+							color contrib = px.vp.beta*f*flux;
+#pragma omp atomic
+							phi[idx].e[0] += contrib.x();
+#pragma omp atomic
+							phi[idx].e[1] += contrib.y();
+#pragma omp atomic
+							phi[idx].e[2] += contrib.z();
+#pragma omp atomic
 							M[idx]++;
 						}
 					}
@@ -172,7 +186,9 @@ void PPMRenderer::render(
 				double surv=std::clamp(flux.max_component(),0.05,0.95);
 				if (random_double()>surv) break;
 				flux=flux/surv;
-				flux=flux*bs.f*std::abs(dot(rec.normal,bs.wi))/bs.pdf;
+				flux = bs.is_delta
+					 ? flux*bs.f
+					 : flux*bs.f*std::abs(dot(rec.normal,bs.wi))/bs.pdf;
 				cur=ray(rec.p,bs.wi,0.0);
 			}
 		}

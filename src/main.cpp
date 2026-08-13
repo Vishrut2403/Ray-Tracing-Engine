@@ -14,6 +14,7 @@
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <iostream>
 #include <string>
 
 static bool has_flag(int argc, char** argv, const char* flag) {
@@ -42,9 +43,31 @@ int main(int argc, char** argv)
 	bool no_preview      = has_flag(argc, argv, "--no-preview");
 	bool use_ppm         = (config.feature == "ppm");
 	bool use_denoise     = has_flag(argc, argv, "--denoise");
+	bool want_restir     = get_flag_value(argc, argv, "--integrator", "restir");
 
 	if (config.feature == "furnace")
 		apply_furnace_preset(config);
+
+	// The GPU covers only a subset of scenes. An unknown name used to fall
+	// through to a Cornell box and look like it worked; say so and use the CPU.
+	if (use_gpu && use_ppm) {
+		std::cerr << "[note] scene 'ppm' is progressive photon mapping, "
+					 "which is CPU-only; ignoring --device gpu\n";
+		use_gpu = false;
+	} else if (use_gpu && !cuda_supports_scene(config.feature)) {
+		std::cerr << "[note] scene '" << config.feature
+				  << "' has no GPU implementation; rendering on the CPU instead\n";
+		use_gpu = false;
+	}
+
+	// The GPU medium only exists in the ReSTIR shading kernel.
+	if (use_gpu && config.feature == "volume" && !want_restir) {
+		std::cerr << "[note] scene 'volume' needs the ReSTIR integrator on GPU "
+					 "for its participating medium; selecting it\n";
+		want_restir = true;
+	}
+	GpuIntegrator gpu_integrator = want_restir ? GpuIntegrator::RESTIR
+											   : GpuIntegrator::PATH_TRACER;
 
 	Scene  scene = SceneFactory::build(config.feature);
 	camera cam   = CameraFactory::build(config);
@@ -64,13 +87,13 @@ int main(int argc, char** argv)
 		if (no_preview) {
 			cuda_render(scene, fb, cam, config.background,
 						config.samples, config.max_depth,
-						nullptr, config.feature);
+						nullptr, config.feature, gpu_integrator);
 		} else {
 			PreviewWindow preview(config.width, config.height);
 			std::thread render_thread([&]() {
 				cuda_render(scene, fb, cam, config.background,
 							config.samples, config.max_depth,
-							&preview, config.feature);
+							&preview, config.feature, gpu_integrator);
 			});
 			while (!preview.should_close()) {
 				preview.poll_events();

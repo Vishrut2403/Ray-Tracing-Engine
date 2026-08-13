@@ -23,6 +23,19 @@ public:
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const = 0;
 	virtual color      f  (const ray& wo, const vec3& wi, const hit_record& rec) const = 0;
 	virtual double     pdf(const ray& wo, const vec3& wi, const hit_record& rec) const = 0;
+
+	// Bidirectional interface for BDPT: wo and wi both point away from the
+	// surface, f excludes the cosine, and delta lobes use f = weight/|cos| with
+	// pdf = 1. Default is a non-scattering material.
+	virtual color f_dir(const vec3&, const vec3&, const hit_record&) const {
+		return color(0,0,0);
+	}
+	virtual double pdf_dir(const vec3&, const vec3&, const hit_record&) const {
+		return 0.0;
+	}
+	virtual BSDFSample sample_dir(const vec3&, const hit_record&) const {
+		return { vec3(0,0,0), color(0,0,0), 0.0, false };
+	}
 };
 
 class lambertian : public material {
@@ -49,6 +62,28 @@ public:
 		double c = dot(rec.normal, wi);
 		return c > 0.0 ? c / pi : 0.0;
 	}
+
+	virtual color f_dir(const vec3& wo, const vec3& wi,
+						const hit_record& rec) const override {
+		if (dot(rec.normal, wi) <= 0.0 || dot(rec.normal, wo) <= 0.0)
+			return color(0,0,0);
+		return albedo->value(rec.u, rec.v, rec.p) / pi;
+	}
+	virtual double pdf_dir(const vec3& wo, const vec3& wi,
+						   const hit_record& rec) const override {
+		double c = dot(rec.normal, wi);
+		if (c <= 0.0 || dot(rec.normal, wo) <= 0.0) return 0.0;
+		return c / pi;
+	}
+	virtual BSDFSample sample_dir(const vec3& wo,
+								  const hit_record& rec) const override {
+		if (dot(rec.normal, wo) <= 0.0) return { vec3(0,0,0), color(0,0,0), 0.0, false };
+		onb uvw; uvw.build_from_w(rec.normal);
+		vec3   wi = unit_vector(uvw.local(random_cosine_direction()));
+		double c  = dot(rec.normal, wi);
+		if (c <= 0.0) return { wi, color(0,0,0), 0.0, false };
+		return { wi, albedo->value(rec.u, rec.v, rec.p) / pi, c / pi, false };
+	}
 };
 
 class metal : public material {
@@ -66,6 +101,15 @@ public:
 
 	virtual color  f  (const ray&, const vec3&, const hit_record&) const override { return color(0,0,0); }
 	virtual double pdf(const ray&, const vec3&, const hit_record&) const override { return 0.0; }
+
+	virtual BSDFSample sample_dir(const vec3& wo,
+								  const hit_record& rec) const override {
+		vec3   wi = unit_vector(reflect(-wo, rec.normal)
+								+ fuzz * random_in_unit_sphere());
+		double c  = dot(wi, rec.normal);
+		if (c <= 0.0) return { wi, color(0,0,0), 0.0, false };
+		return { wi, albedo / std::max(std::abs(c), 1e-9), 1.0, true };
+	}
 };
 
 class dielectric : public material {
@@ -87,6 +131,20 @@ public:
 
 	virtual color  f  (const ray&, const vec3&, const hit_record&) const override { return color(0,0,0); }
 	virtual double pdf(const ray&, const vec3&, const hit_record&) const override { return 0.0; }
+
+	virtual BSDFSample sample_dir(const vec3& wo,
+								  const hit_record& rec) const override {
+		double ratio = rec.front_face ? (1.0 / ir) : ir;
+		vec3   ud    = -wo;
+		double cos_t = fmin(dot(wo, rec.normal), 1.0);
+		double sin_t = std::sqrt(std::max(0.0, 1.0 - cos_t * cos_t));
+		vec3   dir   = (ratio * sin_t > 1.0 || schlick(cos_t, ratio) > random_double())
+					   ? reflect(ud, rec.normal)
+					   : refract(ud, rec.normal, ratio);
+		dir = unit_vector(dir);
+		return { dir, color(1,1,1) / std::max(std::abs(dot(dir, rec.normal)), 1e-9),
+				 1.0, true };
+	}
 
 private:
 	static double schlick(double cos, double ri) {
@@ -126,12 +184,13 @@ public:
 		double p = vndf_pdf(wo_l, h_l, alpha);
 		if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
 
-		return { wi, eval(-unit_vector(wo.direction()), wi, rec.normal), p, false };
+		return { wi, brdf(-unit_vector(wo.direction()), wi, rec.normal), p, false };
 	}
 
+	// Without the cosine: the integrators apply cos(theta) themselves.
 	virtual color f(const ray& wo, const vec3& wi, const hit_record& rec) const override {
 		if (dot(rec.normal, wi) <= 0.0) return color(0,0,0);
-		return eval(-unit_vector(wo.direction()), wi, rec.normal);
+		return brdf(-unit_vector(wo.direction()), wi, rec.normal);
 	}
 
 	virtual double pdf(const ray& wo, const vec3& wi, const hit_record& rec) const override {
@@ -145,6 +204,37 @@ public:
 		vec3 h_l  = vec3(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
 
 		return vndf_pdf(wo_l, h_l, alpha);
+	}
+
+	virtual color f_dir(const vec3& wo, const vec3& wi,
+						const hit_record& rec) const override {
+		return brdf(wo, wi, rec.normal);
+	}
+	virtual double pdf_dir(const vec3& wo, const vec3& wi,
+						   const hit_record& rec) const override {
+		if (dot(rec.normal, wi) <= 0.0 || dot(rec.normal, wo) <= 0.0) return 0.0;
+		double alpha = roughness * roughness;
+		onb uvw; uvw.build_from_w(rec.normal);
+		vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
+		vec3 h   = unit_vector(wo + wi);
+		vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+		return vndf_pdf(wo_l, h_l, alpha);
+	}
+	virtual BSDFSample sample_dir(const vec3& wo,
+								  const hit_record& rec) const override {
+		double alpha = roughness * roughness;
+		onb uvw; uvw.build_from_w(rec.normal);
+		vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
+		if (wo_l.z() <= 0.0) return { vec3(0,0,0), color(0,0,0), 0.0, false };
+
+		vec3 h_l = sample_vndf(wo_l, alpha);
+		vec3 h   = unit_vector(uvw.local(h_l));
+		vec3 wi  = unit_vector(reflect(-wo, h));
+		if (dot(wi, rec.normal) <= 0.0) return { wi, color(0,0,0), 0.0, false };
+
+		double p = vndf_pdf(wo_l, h_l, alpha);
+		if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
+		return { wi, brdf(wo, wi, rec.normal), p, false };
 	}
 
 private:
@@ -170,22 +260,23 @@ private:
 		return f0 + (color(1,1,1)-f0) * std::pow(1.0-vdoth, 5.0);
 	}
 
-	color eval(const vec3& v, const vec3& l, const vec3& n) const {
-		double a      = roughness * roughness;
-		vec3   h      = unit_vector(v + l);
-		double ndotv  = std::max(dot(n,v), 1e-7);
-		double ndotl  = std::max(dot(n,l), 1e-7);
-		double ndoth  = std::max(dot(n,h), 1e-7);
-		double vdoth  = std::max(dot(v,h), 1e-7);
+	// True BSDF, without the trailing cosine.
+	color brdf(const vec3& v, const vec3& l, const vec3& n) const {
+		double ndotv = dot(n,v), ndotl = dot(n,l);
+		if (ndotv <= 0.0 || ndotl <= 0.0) return color(0,0,0);
 
-		color  Fval   = F(vdoth);
-		double Dval   = D(ndoth, a);
-		double Gval   = G2(ndotv, ndotl, a);
+		double a     = roughness * roughness;
+		vec3   h     = unit_vector(v + l);
+		double ndoth = std::max(dot(n,h), 1e-7);
+		double vdoth = std::max(dot(v,h), 1e-7);
+
+		color  Fval = F(vdoth);
+		double Dval = D(ndoth, a);
+		double Gval = G2(ndotv, ndotl, a);
 
 		color specular = Fval * (Dval * Gval / (4.0 * ndotv * ndotl));
 		color diffuse  = base_color / pi * (1.0 - metallic) * (color(1,1,1) - Fval);
-
-		return (specular + diffuse) * ndotl;
+		return specular + diffuse;
 	}
 
 	static vec3 sample_vndf(const vec3& wo, double a) {
@@ -257,105 +348,32 @@ public:
 	}
 };
 
-// Subsurface scattering — Jensen dipole model
+// Subsurface scattering — Jensen dipole as a diffusion BRDF.
 //
-// Parameters:
-//   albedo_color  — single-scattering albedo (what color light turns inside)
-//   mean_free_path — average distance light travels before scattering (scene units)
-//   ior           — index of refraction at the air/medium boundary (default 1.4 for skin)
-//
-// Usage:
-//   make_shared<subsurface>(color(0.8, 0.3, 0.2), 0.05, 1.4)  // red wax / skin-like
-//   make_shared<subsurface>(color(0.9, 0.8, 0.7), 0.1,  1.3)  // milk / marble
-//   make_shared<subsurface>(color(0.2, 0.6, 0.2), 0.02, 1.4)  // leaf / jade
+// The exit point is never displaced, so this is a BRDF: the analytic total
+// diffuse reflectance of the dipole (Jensen et al. 2001) wrapped in Fresnel
+// transmittance. f(), pdf() and sample() all describe that one BRDF so every
+// estimator agrees. mean_free_path therefore has no effect on shading — Rd is
+// scale-invariant in the exit radius. albedo_color is the scattering albedo a'.
 class subsurface : public material {
 public:
 	color  albedo_color;
 	double mean_free_path;
 	double ior;
 
-	subsurface(const color& alb, double mfp, double ior = 1.4)
+	subsurface(const color& alb, double mfp, double ior_ = 1.4)
 		: albedo_color(alb),
 		  mean_free_path(std::max(mfp, 1e-4)),
-		  ior(ior) {}
+		  ior(ior_),
+		  Rd(total_diffuse_reflectance(alb, ior_)),
+		  T_entry(1.0 - fdr(ior_)) {}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
-		// Dipole parameters
-		double eta   = ior;
-		double Fdr   = fdr(eta);
-		double A     = (1.0 + Fdr) / std::max(1.0 - Fdr, 1e-6);
-
-		// Per-channel sigma_t from mfp, modulated by albedo
-		double inv_mfp = 1.0 / mean_free_path;
-		double st_r = inv_mfp / std::max(albedo_color.x(), 0.01);
-		double st_g = inv_mfp / std::max(albedo_color.y(), 0.01);
-		double st_b = inv_mfp / std::max(albedo_color.z(), 0.01);
-
-		// Dipole source depths per channel
-		double zr_r = 1.0/st_r, zr_g = 1.0/st_g, zr_b = 1.0/st_b;
-		double zv_r = zr_r*(1.0+4.0/3.0*A);
-		double zv_g = zr_g*(1.0+4.0/3.0*A);
-		double zv_b = zr_b*(1.0+4.0/3.0*A);
-
-		// Sample exit radius from exponential
-		double u  = std::max(random_double(), 1e-7);
-		double r  = -std::log(u) * mean_free_path;
-
-		// Sample uniform disk in tangent plane
-		double phi = 2.0 * pi * random_double();
-		onb uvw; uvw.build_from_w(rec.normal);
-		// (exit point x_exit = rec.p + r*cos(phi)*uvw.u() + r*sin(phi)*uvw.v()
-		//  not used explicitly in CPU path tracer — direction samples below)
-
-		// Evaluate dipole profile at r
-		double r2  = r*r;
-		auto dipole_channel = [&](double st, double zr, double zv) -> double {
-			double dr  = std::sqrt(r2 + zr*zr);
-			double dv  = std::sqrt(r2 + zv*zv);
-			double Rr  = std::exp(-st*dr) / (dr*dr) * (st + 1.0/dr);
-			double Rv  = std::exp(-st*dv) / (dv*dv) * (st + 1.0/dv);
-			return std::max(0.0, (Rr - Rv) / (4.0 * pi));
-		};
-
-		color Rd(
-			dipole_channel(st_r, zr_r, zv_r),
-			dipole_channel(st_g, zr_g, zv_g),
-			dipole_channel(st_b, zr_b, zv_b)
-		);
-		Rd = Rd * albedo_color;
-
-		// Exit direction: cosine-weighted outward hemisphere
-		vec3   wi      = uvw.local(random_cosine_direction());
-		double cos_out = std::max(dot(rec.normal, wi), 0.0);
-		if (cos_out <= 0.0) return { wi, color(0,0,0), 0.0, false };
-
-		// Fresnel transmittance at entry and exit
-		vec3   ud      = unit_vector(wo.direction());
-		double cos_in  = std::max(dot(-ud, rec.normal), 0.0);
-		double r0      = (1.0 - eta) / (1.0 + eta); r0 *= r0;
-		double F_in    = r0 + (1.0-r0)*std::pow(1.0-cos_in, 5.0);
-		double T_in    = 1.0 - F_in;
-
-		double eta_inv = 1.0 / eta;
-		double r0_out  = (1.0-eta_inv)/(1.0+eta_inv); r0_out *= r0_out;
-		double F_out   = r0_out + (1.0-r0_out)*std::pow(1.0-cos_out, 5.0);
-		double T_out   = 1.0 - F_out;
-
-		// PDF: exponential in r * uniform phi * cosine in wi
-		double pdf_r = r * std::exp(-r / mean_free_path) / (mean_free_path * mean_free_path);
-		double pdf_phi = 1.0 / (2.0 * pi);
-		double pdf_wi  = cos_out / pi;
-		double pdf_val = pdf_r * pdf_phi * pdf_wi;
-		if (pdf_val <= 1e-10) return { wi, color(0,0,0), 0.0, false };
-
-		color f_val = Rd * (T_in * T_out * cos_out / pi);
-		return { wi, f_val, pdf_val, false };
+		return sample_dir(-unit_vector(wo.direction()), rec);
 	}
 
-	// SSS f() returns Lambertian approximation for MIS/ReSTIR p_hat
 	virtual color f(const ray&, const vec3& wi, const hit_record& rec) const override {
-		if (dot(rec.normal, wi) <= 0.0) return color(0,0,0);
-		return albedo_color / pi;
+		return brdf(wi, rec.normal);
 	}
 
 	virtual double pdf(const ray&, const vec3& wi, const hit_record& rec) const override {
@@ -363,13 +381,54 @@ public:
 		return c > 0.0 ? c / pi : 0.0;
 	}
 
+	virtual color f_dir(const vec3&, const vec3& wi,
+						const hit_record& rec) const override {
+		return brdf(wi, rec.normal);
+	}
+	virtual double pdf_dir(const vec3&, const vec3& wi,
+						   const hit_record& rec) const override {
+		double c = dot(rec.normal, wi);
+		return c > 0.0 ? c / pi : 0.0;
+	}
+	virtual BSDFSample sample_dir(const vec3&,
+								  const hit_record& rec) const override {
+		onb uvw; uvw.build_from_w(rec.normal);
+		vec3   wi = unit_vector(uvw.local(random_cosine_direction()));
+		double c  = dot(rec.normal, wi);
+		if (c <= 0.0) return { wi, color(0,0,0), 0.0, false };
+		return { wi, brdf(wi, rec.normal), c / pi, false };
+	}
+
 private:
+	color  Rd;       // total diffuse reflectance of the dipole, per channel
+	double T_entry;  // hemispherical Fresnel transmittance on the way in
+
+	// Entry uses the hemispherical average so f() needs only one direction.
+	color brdf(const vec3& wi, const vec3& n) const {
+		double c = dot(n, wi);
+		if (c <= 0.0) return color(0,0,0);
+		double r0 = (1.0 - ior) / (1.0 + ior); r0 *= r0;
+		double T_exit = 1.0 - (r0 + (1.0 - r0) * std::pow(1.0 - c, 5.0));
+		return Rd * (T_entry * T_exit / pi);
+	}
+
 	// Fresnel diffuse reflectance (Egan & Hilgeman approximation)
 	static double fdr(double eta) {
 		if (eta >= 1.0)
 			return -0.4399 + 0.7099/eta - 0.3319/(eta*eta) + 0.0636/(eta*eta*eta);
 		else
 			return -1.4399/(eta*eta) + 0.7099/eta + 0.6681 + 0.0636*eta;
+	}
+
+	static color total_diffuse_reflectance(const color& alpha, double eta) {
+		double fd = fdr(eta);
+		double A  = (1.0 + fd) / std::max(1.0 - fd, 1e-6);
+		auto ch = [&](double ap) {
+			ap = clamp(ap, 0.0, 0.999);
+			double s = std::sqrt(3.0 * (1.0 - ap));
+			return 0.5 * ap * (1.0 + std::exp(-(4.0/3.0) * A * s)) * std::exp(-s);
+		};
+		return color(ch(alpha.x()), ch(alpha.y()), ch(alpha.z()));
 	}
 };
 

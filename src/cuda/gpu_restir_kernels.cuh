@@ -7,6 +7,7 @@
 #define RAY_OFFSET 0.02
 
 #define TEMPORAL_M_CAP 20
+#define MAX_SPECULAR_CHAIN 8
 
 // Pass 0: G-Buffer fill + initial RIS sampling
 __global__ void restir_initial_kernel(
@@ -38,22 +39,57 @@ __global__ void restir_initial_kernel(
 	gbuf.valid      = false;
 	gbuf.is_emitter = false;
 	gbuf.Le         = vec3(0,0,0);
+	gbuf.beta       = vec3(1,1,1);
+	gbuf.miss_dir   = unit_vector(primary.direction());
+	gbuf.depth      = 0.0f;
 
-	GpuHitRecord rec;
-	if (hit_scene(hittables, n_hittables, primary,
-				  interval(RAY_OFFSET, 1e30), rec,
-				  tris, tri_bvh, tri_root, n_tris)) {
-		vec3 Le = gpu_emitted(materials[rec.mat_id], rec.front_face);
-		if (Le.length_squared() >= 1e-6) {
-			gbuf.is_emitter = true;
-			gbuf.Le         = Le;
-		} else {
+	// Follow the camera ray through any specular chain. Stopping at the first hit
+	// leaves glass and mirrors black: gpu_f is 0 for delta lobes, so both
+	// reservoirs collapse to W = 0 and the fallback skips NEE on a delta sample.
+	{
+		ray   cur = primary;
+		vec3  beta(1,1,1);
+		float travelled = 0.0f;
+
+		for (int bounce = 0; bounce < MAX_SPECULAR_CHAIN; ++bounce) {
+			GpuHitRecord rec;
+			if (!hit_scene(hittables, n_hittables, cur,
+						   interval(RAY_OFFSET, 1e30), rec,
+						   tris, tri_bvh, tri_root, n_tris)) {
+				gbuf.miss_dir = unit_vector(cur.direction());
+				gbuf.beta     = beta;
+				break;
+			}
+
+			travelled += (float)rec.t;
+			const GpuMaterial& m = materials[rec.mat_id];
+
+			vec3 Le = gpu_emitted(m, rec.front_face);
+			if (Le.length_squared() >= 1e-6) {
+				gbuf.is_emitter = true;
+				gbuf.Le         = Le;
+				gbuf.beta       = beta;
+				gbuf.depth      = travelled;
+				break;
+			}
+
+			if (m.type == MatType::DIELECTRIC || m.type == MatType::METAL) {
+				GpuBSDFSample bs = gpu_sample(m, cur, rec, &rng);
+				if (bs.pdf <= 0.0) break;
+				beta = beta * bs.f;          // delta: f is the weight
+				if (!(beta.length_squared() > 0.0)) break;
+				cur = ray(rec.p, bs.wi, 0.0);
+				continue;
+			}
+
 			gbuf.pos    = rec.p;
 			gbuf.normal = rec.normal;
-			gbuf.wo     = -unit_vector(primary.direction());
+			gbuf.wo     = -unit_vector(cur.direction());
 			gbuf.mat_id = rec.mat_id;
-			gbuf.depth  = (float)rec.t;
+			gbuf.depth  = travelled;
+			gbuf.beta   = beta;
 			gbuf.valid  = true;
+			break;
 		}
 	}
 
@@ -231,7 +267,7 @@ __global__ void restir_shade_kernel(
 
 	// Emitter pixel
 	if (gbuf.is_emitter) {
-		vec3 emit = gbuf.Le;
+		vec3 emit = gbuf.Le * gbuf.beta;
 		if (medium.active)
 			emit = emit * transmittance(medium, (double)gbuf.depth);
 		d_accum[idx*3+0] += (float)emit.x();
@@ -243,11 +279,8 @@ __global__ void restir_shade_kernel(
 
 	// Miss
 	if (!gbuf.valid) {
-		double u = (x + 0.5) / (W-1);
-		double v = (y + 0.5) / (H-1);
-		ray r = gpu_get_ray(cam, u, v, &rng);
-		if (env_map && env_map->valid)
-			L = gpu_env_Le(*env_map, r.direction());
+			if (env_map && env_map->valid)
+			L = gpu_env_Le(*env_map, gbuf.miss_dir);
 		else
 			L = background;
 
@@ -269,7 +302,7 @@ __global__ void restir_shade_kernel(
 				if (is_visible(gbuf.pos, res.y.pos,
 							   hittables, n_hittables,
 							   tris, tri_bvh, tri_root, n_tris)) {
-					vec3  f     = gpu_f(mat, wi, gbuf.normal);
+					vec3  f     = gpu_f_dir(mat, gbuf.wo, wi, gbuf.normal);
 					float cos_i = (float)fabs(dot(gbuf.normal, wi));
 					float cos_l = (float)fabs(dot(res.y.normal, -(wi)));
 					float G     = cos_i * cos_l / (dist * dist);
@@ -301,7 +334,7 @@ __global__ void restir_shade_kernel(
 							tris, tri_bvh, tri_root, n_tris)) {
 
 					// BRDF at primary hit toward secondary hit
-					vec3  f_gi   = gpu_f(mat, wi_gi, gbuf.normal);
+					vec3  f_gi   = gpu_f_dir(mat, gbuf.wo, wi_gi, gbuf.normal);
 					float cos_gi = fmaxf(0.0f, (float)dot(gbuf.normal, wi_gi));
 
 					// Jacobian corrects for geometry change during reconnection
@@ -332,7 +365,7 @@ __global__ void restir_shade_kernel(
 			gbuf_rec.t = (double)gbuf.depth;
 
 			GpuBSDFSample bs = gpu_sample(mat,
-				ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, gbuf.wo, 0.0),
+				ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, -gbuf.wo, 0.0),
 				gbuf_rec, &rng);
 
 			if (bs.pdf > 0.0) {
@@ -400,7 +433,9 @@ __global__ void restir_shade_kernel(
 					vec3 iLe = gpu_emitted(materials[irec.mat_id],
 										   irec.front_face);
 					if (iLe.length_squared() > 0.0) {
-						L = L + beta * iLe;
+						// DI owns the area-light term; taking it here too
+						// double-counts.
+						if (n_lights == 0) L = L + beta * iLe;
 					} else if (!bs.is_delta && n_lights > 0) {
 						vec3 to_l = gpu_light_random(hittables, light_ids,
 													  n_lights, irec.p, &rng);
@@ -449,6 +484,9 @@ __global__ void restir_shade_kernel(
 			}
 		} // end fallback
 	}
+
+	// Weight by any specular prefix the camera looked through.
+	L = L * gbuf.beta;
 
 	// Clamp fireflies
 	double lum = 0.2126*L.x() + 0.7152*L.y() + 0.0722*L.z();

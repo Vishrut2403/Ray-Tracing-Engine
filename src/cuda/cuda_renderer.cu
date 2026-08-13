@@ -24,6 +24,10 @@ void GpuScene::free_device() {
 	if (d_light_ids) { cudaFree(d_light_ids); d_light_ids = nullptr; }
 }
 
+bool cuda_supports_scene(const std::string& name) {
+	return SceneUploader::supports(name);
+}
+
 static GpuCamera make_gpu_camera(const camera& cam) {
 	GpuCamera gc;
 	gc.origin      = cam.get_origin();
@@ -42,7 +46,8 @@ void cuda_render(const Scene& scene,
 				 const color& background,
 				 int spp, int max_depth,
 				 PreviewWindow* preview,
-				 const std::string& scene_name) {
+				 const std::string& scene_name,
+				 GpuIntegrator integrator) {
 					
 	const int W = fb.get_width();
 	const int H = fb.get_height();
@@ -121,11 +126,132 @@ void cuda_render(const Scene& scene,
 	dim3 threads(16,16);
 	dim3 blocks((W+15)/16, (H+15)/16);
 
+	if (gpu_scene.use_bdpt) {
+		printf("[CUDA/BDPT] %dx%d spp=%d\n", W, H, spp);
+		
+		float* h_accum;
+		cudaMallocHost(&h_accum, N * 3 * sizeof(float));
+
+		for (int s = 0; s < spp; ++s) {
+			accumulate_bdpt_kernel<<<blocks,threads,0,stream>>>(
+				d_accum, W, H, max_depth,
+				gpu_cam,
+				gpu_scene.d_hittables, gpu_scene.n_hittables,
+				gpu_scene.d_materials,
+				gpu_scene.d_light_ids, gpu_scene.n_lights,
+				d_states,
+				gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
+				gpu_scene.tri_bvh_root, gpu_scene.n_triangles
+			);
+			cudaStreamSynchronize(stream);
+
+			if (preview && (s % 4 == 0 || s == spp-1)) {
+				cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
+								cudaMemcpyDeviceToHost, stream);
+				cudaStreamSynchronize(stream);
+				float inv = 1.0f / (s+1);
+				{
+					std::lock_guard<std::mutex> lock(fb.mtx);
+					fb.set_bulk(h_accum, inv);
+				}
+				preview->poll_events();
+				{
+					std::lock_guard<std::mutex> lock(fb.mtx);
+					preview->update(fb.raw_data());
+				}
+			}
+		}
+
+		cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
+						cudaMemcpyDeviceToHost, stream);
+		cudaStreamSynchronize(stream);
+		{
+			std::lock_guard<std::mutex> lock(fb.mtx);
+			fb.set_bulk(h_accum, 1.0f/spp);
+		}
+
+		printf("[CUDA/BDPT] done\n");
+
+		cudaFreeHost(h_accum);
+		cudaFree(d_accum);
+		cudaFree(d_states);
+		cudaStreamDestroy(stream);
+		gpu_scene.free_device();
+		if (d_env_map) {
+			GpuEnvMap host_env;
+			cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap),
+					   cudaMemcpyDeviceToHost);
+			host_env.free_device();
+			cudaFree(d_env_map);
+		}
+		return;
+	}
+
+	// ── Path tracer (default) ─────────────────────────────────────────────────
+	if (integrator == GpuIntegrator::PATH_TRACER) {
+		printf("[CUDA/PT] %dx%d spp=%d depth=%d\n", W, H, spp, max_depth);
+		for (int s = 0; s < spp; ++s) {
+			accumulate_kernel<<<blocks,threads,0,stream>>>(
+				d_accum, W, H, 1, max_depth, gpu_cam,
+				vec3(background.x(), background.y(), background.z()),
+				gpu_scene.d_hittables, gpu_scene.n_hittables,
+				gpu_scene.d_materials,
+				gpu_scene.d_light_ids, gpu_scene.n_lights,
+				d_states,
+				gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
+				gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
+				d_env_map);
+			cudaStreamSynchronize(stream);
+
+			if (preview && (s % 4 == 0 || s == spp-1)) {
+				cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
+								cudaMemcpyDeviceToHost, stream);
+				cudaStreamSynchronize(stream);
+				{
+					std::lock_guard<std::mutex> lock(fb.mtx);
+					fb.set_bulk(h_accum, 1.0f/(s+1));
+				}
+				preview->poll_events();
+				{
+					std::lock_guard<std::mutex> lock(fb.mtx);
+					preview->update(fb.raw_data());
+				}
+			}
+		}
+		cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
+						cudaMemcpyDeviceToHost, stream);
+		cudaStreamSynchronize(stream);
+		{
+			std::lock_guard<std::mutex> lock(fb.mtx);
+			fb.set_bulk(h_accum, 1.0f/spp);
+		}
+		printf("[CUDA/PT] done\n");
+
+		cudaFreeHost(h_accum);
+		cudaFree(d_accum); cudaFree(d_states);
+		cudaFree(d_gbuffer_cur); cudaFree(d_gbuffer_prev);
+		cudaFree(d_res_initial); cudaFree(d_res_temporal);
+		cudaFree(d_res_spatial); cudaFree(d_res_prev);
+		cudaFree(d_gi_initial); cudaFree(d_gi_temporal);
+		cudaFree(d_gi_spatial); cudaFree(d_gi_prev);
+		cudaStreamDestroy(stream);
+		gpu_scene.free_device();
+		gpu_mesh.free_device();
+		if (d_env_map) {
+			GpuEnvMap host_env;
+			cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap),
+					   cudaMemcpyDeviceToHost);
+			host_env.free_device();
+			cudaFree(d_env_map);
+		}
+		return;
+	}
+
 	const int M_CANDIDATES   = 32;
 	const int K_NEIGHBORS    = 5;
 	const int SPATIAL_RADIUS = 30;
-	const int GI_K_NEIGHBORS = 1;      // ← only best neighbor for GI
-	const int GI_SPATIAL_RADIUS = 5;   // ← very tight radius
+	const int GI_K_NEIGHBORS = 1;
+	const int GI_SPATIAL_RADIUS = 5;
 	const int PREVIEW_EVERY  = 4;
 
 	printf("[CUDA/ReSTIR+GI] %dx%d spp=%d M=%d K=%d r=%d\n",

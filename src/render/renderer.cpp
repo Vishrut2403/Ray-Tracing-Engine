@@ -28,6 +28,10 @@ void Renderer::render(
 	const int H = fb.get_height();
 	int tiles_done = 0;
 
+	// t == 1 deposits into arbitrary pixels, so it cannot use the tile buffers.
+	BDPTSplatBuffer splat;
+	if (use_bdpt) splat.resize(W, H);
+
 	auto tiles = generate_tiles(W, H, tile_size);
 
 	float cx = W*0.5f, cy = H*0.5f;
@@ -55,7 +59,7 @@ void Renderer::render(
 
 					color sample;
 					if (use_bdpt)
-						sample = bdpt_Li(r, background, world, lights, env, max_depth);
+						sample = bdpt_Li(r, cam, world, lights, max_depth, splat);
 					else
 						sample = Li(r, background, world, lights, max_depth, env);
 
@@ -79,5 +83,20 @@ void Renderer::render(
 			std::cerr << "\rTiles: " << tiles_done << "/" << tiles.size() << std::flush;
 		}
 	}
+
+	// Merge the light-tracing splats; same 1/spp as the camera paths.
+	if (use_bdpt) {
+		std::lock_guard<std::mutex> lock(fb.mtx);
+		double inv_spp = 1.0 / double(samples_per_pixel);
+		for (int j = 0; j < H; ++j) {
+			for (int i = 0; i < W; ++i) {
+				size_t k = ((size_t)j*W + i)*3;
+				fb.set(i, j, fb.get(i, j)
+							 + color(splat.data[k+0], splat.data[k+1],
+									 splat.data[k+2]) * inv_spp);
+			}
+		}
+	}
+
 	std::cerr << "\nDone.\n";
 }

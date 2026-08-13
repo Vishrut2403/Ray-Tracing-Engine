@@ -65,6 +65,12 @@ struct GBufferPixel {
 	vec3  normal;
 	vec3  wo;
 	vec3  Le;
+	// Throughput of any specular prefix. gpu_f is 0 at a delta vertex, so the
+	// initial pass walks the chain to the first shadeable surface and records
+	// the weight here; (1,1,1) if the camera saw the surface directly.
+	vec3  beta;
+	// Direction leaving the chain when it escapes, for the env lookup.
+	vec3  miss_dir;
 	int   mat_id;
 	float depth;
 	bool  valid;
@@ -124,7 +130,7 @@ __device__ inline float eval_p_hat(
 	if (materials == nullptr)
 		return fmaxf(0.0f, lum * G);
 
-	vec3 f = gpu_f(materials[gbuf.mat_id], wi, gbuf.normal);
+	vec3 f = gpu_f_dir(materials[gbuf.mat_id], gbuf.wo, wi, gbuf.normal);
 	float f_avg = (float)(f.x()+f.y()+f.z()) / 3.0f;
 	return fmaxf(0.0f, lum * G * f_avg);
 }

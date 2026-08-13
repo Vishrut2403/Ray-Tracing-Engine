@@ -8,6 +8,8 @@
 #include "scenes/caustics_scene.h"
 #include "scenes/helmet_scene.h"
 #include "scenes/ppm_scene.h"
+#include "scenes/sss_scene.h"
+#include "scenes/volume_scene.h"
 
 class SceneFactory {
 public:
@@ -21,6 +23,8 @@ public:
 		if (name == "caustics") return build_caustics_scene();
 		if (name == "helmet") return build_helmet_scene();
 		if (name == "ppm") return build_ppm_scene();
+		if (name == "sss")      return build_sss_scene();
+		if (name == "volume")   return build_volume_scene();
 
 		std::cerr << "Unknown scene '" << name << "'. Using cornell.\n";
 		return build_cornell_volume_scene();

@@ -44,28 +44,28 @@ __device__ inline vec3 ggx_F(const vec3& f0, double vdoth) {
 	return f0 + (vec3(1,1,1)-f0) * pow(1.0-vdoth, 5.0);
 }
 
-__device__ inline vec3 ggx_eval(const GpuMaterial& mat,
+// GGX BRDF, without the trailing cosine.
+__device__ inline vec3 ggx_brdf(const GpuMaterial& mat,
 								 const vec3& v, const vec3& l, const vec3& n) {
-	if (dot(n, v) <= 0.0 || dot(n, l) <= 0.0) return vec3(0,0,0);
+	double ndotv = dot(n, v), ndotl = dot(n, l);
+	if (ndotv <= 0.0 || ndotl <= 0.0) return vec3(0,0,0);
 
 	double a     = (double)mat.roughness * (double)mat.roughness;
 	vec3   h     = unit_vector(v + l);
-	double ndotv = fmax(dot(n,v), 1e-7);
-	double ndotl = fmax(dot(n,l), 1e-7);
-	double ndoth = fmax(dot(n,h), 1e-7);
-	double vdoth = fmax(dot(v,h), 1e-7);
+	double ndoth = fmax(dot(n, h), 1e-7);
+	double vdoth = fmax(dot(v, h), 1e-7);
 
-	vec3 f0    = vec3(0.04,0.04,0.04)*(1.0-(double)mat.metallic)
-			   + mat.albedo*(double)mat.metallic;
-	vec3   Fval   = ggx_F(f0, vdoth);
-	double Dval   = ggx_D(ndoth, a);
-	double Gval   = ggx_G2(ndotv, ndotl, a);
+	vec3 f0 = vec3(0.04,0.04,0.04)*(1.0-(double)mat.metallic)
+			+ mat.albedo*(double)mat.metallic;
 
-	vec3 specular = Fval * (Dval * Gval / (4.0 * ndotv * ndotl));
+	vec3   F = ggx_F(f0, vdoth);
+	double D = ggx_D(ndoth, a);
+	double G = ggx_G2(ndotv, ndotl, a);
+
+	vec3 specular = F * (D * G / (4.0 * ndotv * ndotl));
 	vec3 diffuse  = mat.albedo / GPU_PI * (1.0-(double)mat.metallic)
-				  * (vec3(1,1,1)-Fval);
-
-	return (specular + diffuse) * ndotl;
+				  * (vec3(1,1,1) - F);
+	return specular + diffuse;
 }
 
 __device__ inline vec3 ggx_sample_vndf(const vec3& wo, double a, curandState* rng) {
@@ -94,28 +94,11 @@ __device__ inline double ggx_vndf_pdf(const vec3& wo, const vec3& h, double a) {
 	return ggx_D(ndoth, a) * ggx_G1(ndotwo, a) * hdotwo / (4.0 * ndotwo * hdotwo);
 }
 
-// SSS — Jensen Dipole
-//
-// Model: light enters at a surface point, scatters inside the volume,
-// and exits at a nearby point sampled from the dipole diffusion profile.
-//
-// Parameters stored in GpuMaterial:
-//   albedo  — single-scattering albedo (per channel)
-//   mfp     — mean free path in scene units
-//   ir      — IOR at the air/medium boundary (used for Fresnel at entry/exit)
-//
-// The dipole diffusion profile for a reduced scattering coefficient sigma_r:
-//   R(r) = alpha' / (4*pi) * [ exp(-sigma_r*d_r) / d_r^2 * (sigma_r + 1/d_r)
-//                             + exp(-sigma_r*d_v) / d_v^2 * (sigma_r + 1/d_v) ]
-// where d_r = sqrt(r^2 + z_r^2), d_v = sqrt(r^2 + z_v^2)
-// z_r = 1/sigma_t, z_v = z_r * (1 + 4/3 * A)
-// A   = (1 + F_dr) / (1 - F_dr),  F_dr = -1.44/eta^2 + 0.71/eta + 0.668 + 0.0636*eta
-//
-// Sampling: sample r from a 1D exponential in r, then uniform phi.
-// The exit point is x_o = x_i + r*(tangent direction).
-// Exit direction is cosine-weighted on the outward hemisphere at x_o.
+// SSS — Jensen dipole as a diffusion BRDF; mirrors the CPU `subsurface` class.
+// mat.mfp does not affect shading: Rd is scale-invariant in the exit radius and
+// the exit point stays pinned to the entry point.
 
-// Fresnel diffuse reflectance approximation (Egan & Hilgeman)
+// Fresnel diffuse reflectance (Egan & Hilgeman approximation)
 __device__ inline double sss_Fdr(double eta) {
 	if (eta >= 1.0)
 		return -0.4399 + 0.7099/eta - 0.3319/(eta*eta) + 0.0636/(eta*eta*eta);
@@ -123,149 +106,31 @@ __device__ inline double sss_Fdr(double eta) {
 		return -1.4399/(eta*eta) + 0.7099/eta + 0.6681 + 0.0636*eta;
 }
 
-// Dipole profile R(r) — returns per-channel exitant radiance for unit incident flux
-__device__ inline vec3 sss_dipole_R(float r, const vec3& sigma_t_r,
-									 const vec3& z_r, const vec3& z_v) {
-	// d_r = sqrt(r^2 + z_r^2),  d_v = sqrt(r^2 + z_v^2)
-	double r2 = (double)r * (double)r;
-
-	vec3 result(0,0,0);
+// Total diffuse reflectance of the dipole (Jensen et al. 2001).
+__device__ inline vec3 sss_Rd_total(const vec3& alpha, double eta) {
+	double fd = sss_Fdr(eta);
+	double A  = (1.0 + fd) / fmax(1.0 - fd, 1e-6);
+	double out[3];
 	for (int c = 0; c < 3; ++c) {
-		double sr  = (c==0) ? sigma_t_r.x() : (c==1) ? sigma_t_r.y() : sigma_t_r.z();
-		double zr  = (c==0) ? z_r.x()       : (c==1) ? z_r.y()       : z_r.z();
-		double zv  = (c==0) ? z_v.x()       : (c==1) ? z_v.y()       : z_v.z();
-
-		double dr  = sqrt(r2 + zr*zr);
-		double dv  = sqrt(r2 + zv*zv);
-
-		double Rr  = exp(-sr*dr) / (dr*dr) * (sr + 1.0/dr);
-		double Rv  = exp(-sr*dv) / (dv*dv) * (sr + 1.0/dv);
-
-		double val = (Rr - Rv) / (4.0 * GPU_PI);
-		val = fmax(0.0, val);
-
-		if (c==0)      result = vec3(val, result.y(), result.z());
-		else if (c==1) result = vec3(result.x(), val, result.z());
-		else           result = vec3(result.x(), result.y(), val);
+		double ap = (c == 0) ? alpha.x() : (c == 1) ? alpha.y() : alpha.z();
+		ap = fmin(fmax(ap, 0.0), 0.999);
+		double sq = sqrt(3.0 * (1.0 - ap));
+		out[c] = 0.5 * ap * (1.0 + exp(-(4.0/3.0) * A * sq)) * exp(-sq);
 	}
-	return result;
+	return vec3(out[0], out[1], out[2]);
 }
 
-// Sample exit radius from exponential profile p(r) ∝ exp(-r / mfp) * r
-// using the inversion method on the CDF of r*exp(-r/mfp)
-__device__ inline float sss_sample_radius(float mfp, curandState* rng) {
-	// CDF of p(r) = (1/mfp^2) * r * exp(-r/mfp) is analytically invertible
-	// but we use the simpler exponential importance sample: r = -mfp * log(xi)
-	// then accept/reject weighting handles the profile shape.
-	// For simplicity and to avoid complex inversion, sample r = -mfp*log(u1)
-	// and weight by r (the actual profile weighting is absorbed into the MIS).
-	// This matches d'Eon & Irving 2011's approach for a single-lobe profile.
-	double u1 = fmax(rand_double(rng), 1e-7);
-	double u2 = fmax(rand_double(rng), 1e-7);
-	return (float)(-(double)mfp * (log(u1) + log(u2)));
-}
-
-__device__ inline GpuBSDFSample gpu_sample_sss(
-	const GpuMaterial& mat,
-	const ray& wo,
-	const GpuHitRecord& rec,
-	const GpuHittable* hittables, int n_hittables,
-	const GpuTriangle* tris, const GpuTriBVHNode* tri_bvh,
-	int tri_root, int n_tris,
-	curandState* rng)
-{
-	GpuBSDFSample bs{};
-
-	float  mfp = mat.mfp;
+// Depends only on the exit direction, so gpu_f (which has no outgoing
+// direction) returns exactly what gpu_sample and gpu_f_dir do.
+__device__ inline vec3 sss_brdf(const GpuMaterial& mat,
+								 const vec3& wi, const vec3& n) {
+	double c = dot(n, wi);
+	if (c <= 0.0) return vec3(0,0,0);
 	double eta = (double)mat.ir;
-
-	// Dipole parameters
-	// Reduced scattering: sigma_s' = sigma_s * (1-g), g=0 for isotropic
-	// We parameterise directly from mfp: sigma_t = 1/mfp per channel
-	// For coloured materials, scale per channel by albedo luminance
-	double inv_mfp = 1.0 / (double)mfp;
-	vec3   sigma_t = vec3(inv_mfp, inv_mfp, inv_mfp);
-
-	// Scale sigma_t per channel by inverse albedo so brighter channels scatter further
-	// Clamp to avoid division by zero on zero-albedo channels
-	vec3 alb = mat.albedo;
-	sigma_t = vec3(
-		sigma_t.x() / fmax((double)alb.x(), 0.01),
-		sigma_t.y() / fmax((double)alb.y(), 0.01),
-		sigma_t.z() / fmax((double)alb.z(), 0.01)
-	);
-
-	// Fresnel diffuse reflectance
-	double Fdr = sss_Fdr(eta);
-	double A   = (1.0 + Fdr) / fmax(1.0 - Fdr, 1e-6);
-
-	// Dipole source depths
-	vec3 z_r = vec3(1.0/sigma_t.x(), 1.0/sigma_t.y(), 1.0/sigma_t.z());
-	vec3 z_v = z_r * (1.0 + 4.0/3.0 * A);
-
-	// 
-	// Build tangent frame at the entry point
-	onb uvw; uvw.build_from_w(rec.normal);
-
-	// Sample exit radius from exponential (importance sampling the diffusion profile)
-	float r = sss_sample_radius(mfp, rng);
-
-	// Sample uniformly on a disk of radius r in the tangent plane
-	double phi = 2.0 * GPU_PI * rand_double(rng);
-	vec3 offset = uvw.u() * (r * cos(phi)) + uvw.v() * (r * sin(phi));
-
-	// Exit point: project along the normal to stay near the surface
-	// We shoot a ray from above (entry point + offset + normal*epsilon) downward
-	vec3 x_exit = rec.p + offset;
-
-	// Evaluate the dipole profile at radius r
-	vec3 Rd = sss_dipole_R(r, sigma_t, z_r, z_v);
-
-	// Scale by albedo — the profile gives the reduced scattering contribution,
-	// albedo modulates it per channel
-	Rd = Rd * alb;
-
-	// Exit direction: cosine-weighted on outward hemisphere
-	vec3 wi = uvw.local(rand_cosine_direction(rng));
-	double cos_out = fmax(dot(rec.normal, wi), 0.0);
-	if (cos_out <= 0.0) return bs;
-
-	// 
-	// Entry Fresnel (air -> medium): T_i = 1 - F(cos_i)
-	vec3  ud      = unit_vector(wo.direction());
-	double cos_in = fmax(dot(-ud, rec.normal), 0.0);
-	// Schlick approximation
-	double r0     = (1.0 - eta) / (1.0 + eta); r0 *= r0;
-	double F_in   = r0 + (1.0-r0) * pow(1.0-cos_in, 5.0);
-	double T_in   = 1.0 - F_in;
-
-	// Exit Fresnel (medium -> air): T_o = 1 - F(cos_out, 1/eta)
-	double eta_inv = 1.0 / eta;
-	double r0_out  = (1.0 - eta_inv) / (1.0 + eta_inv); r0_out *= r0_out;
-	double F_out   = r0_out + (1.0-r0_out) * pow(1.0-cos_out, 5.0);
-	double T_out   = 1.0 - F_out;
-
-	// 
-	// pdf(r) = exp(-r/mfp) / mfp  (exponential sampling)
-	// pdf(phi) = 1/(2*pi)
-	// pdf(wi) = cos_out / pi  (cosine-weighted)
-	double pdf_r   = (double)r * exp(-(double)r / (double)mfp) / ((double)mfp * (double)mfp);
-	double pdf_phi = 1.0 / (2.0 * GPU_PI);
-	double pdf_wi  = cos_out / GPU_PI;
-	double pdf     = pdf_r * pdf_phi * pdf_wi;
-	if (pdf <= 1e-10) return bs;
-
-	// 
-	// f = T_in * Rd * T_out * cos_out / pi
-	// The pi in the denominator and the cos_out cancel with the pdf,
-	// but we keep the full form here and let the integrator divide by pdf.
-	vec3 f_val = Rd * (T_in * T_out * cos_out / GPU_PI);
-
-	bs.wi       = wi;
-	bs.f        = f_val;
-	bs.pdf      = pdf;
-	bs.is_delta = false;
-	return bs;
+	double r0  = (1.0 - eta) / (1.0 + eta); r0 *= r0;
+	double T_exit  = 1.0 - (r0 + (1.0 - r0) * pow(1.0 - c, 5.0));
+	double T_entry = 1.0 - sss_Fdr(eta);
+	return sss_Rd_total(mat.albedo, eta) * (T_entry * T_exit / GPU_PI);
 }
 
 // Public interface
@@ -277,14 +142,13 @@ __device__ inline vec3 gpu_f(const GpuMaterial& mat,
 		return mat.albedo / GPU_PI;
 	}
 	if (mat.type == MatType::GGX) {
+		// Cosine-free like LAMBERTIAN. No outgoing direction here, so the view
+		// vector is approximated by the normal; gpu_f_dir does it properly.
 		if (dot(normal, wi) <= 0.0) return vec3(0,0,0);
-		return ggx_eval(mat, normal, wi, normal);
+		return ggx_brdf(mat, normal, wi, normal);
 	}
 	if (mat.type == MatType::SSS) {
-		// SSS is not evaluated via gpu_f (it needs the full hit context).
-		// Return a Lambertian approximation for ReSTIR GI p_hat estimation.
-		if (dot(normal, wi) <= 0.0) return vec3(0,0,0);
-		return mat.albedo / GPU_PI;
+		return sss_brdf(mat, wi, normal);
 	}
 	return vec3(0,0,0);
 }
@@ -342,7 +206,7 @@ __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 		if (p <= 0.0) return bs;
 
 		vec3 v = -unit_vector(wo.direction());
-		vec3 f = ggx_eval(mat, v, wi, rec.normal);
+		vec3 f = ggx_brdf(mat, v, wi, rec.normal);
 		return { wi, f, p, false };
 	}
 
@@ -364,15 +228,125 @@ __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 	}
 
 	if (mat.type == MatType::SSS) {
-		// SSS sampling — dipole model, no scene intersection needed for the
-		// basic single-layer case (exit point stays on the same local surface).
-		// For a full multi-layer implementation, scene intersection would find
-		// the actual exit point; here we sample the exit direction analytically.
-		return gpu_sample_sss(mat, wo, rec,
-							  nullptr, 0,   // no scene intersection in basic mode
-							  nullptr, nullptr, 0, 0,
-							  rng);
+		onb uvw; uvw.build_from_w(rec.normal);
+		vec3   wi = unit_vector(uvw.local(rand_cosine_direction(rng)));
+		double c  = dot(rec.normal, wi);
+		if (c <= 0.0) return bs;
+		return { wi, sss_brdf(mat, wi, rec.normal), c / GPU_PI, false };
 	}
 
 	return bs;
+}
+
+// Bidirectional BSDF interface: gpu_f/gpu_pdf above take no outgoing direction,
+// which BDPT needs. wo and wi both point away from the surface, f excludes the
+// cosine, and specular lobes use f = weight/|cos| with pdf = 1 so the walk's
+// f*cos/pdf collapses to the plain reflectance.
+
+__device__ inline vec3 gpu_f_dir(const GpuMaterial& mat, const vec3& wo,
+								  const vec3& wi, const vec3& n) {
+	switch (mat.type) {
+		case MatType::LAMBERTIAN:
+			if (dot(n, wi) <= 0.0 || dot(n, wo) <= 0.0) return vec3(0,0,0);
+			return mat.albedo / GPU_PI;
+		case MatType::SSS:
+			if (dot(n, wo) <= 0.0) return vec3(0,0,0);
+			return sss_brdf(mat, wi, n);
+		case MatType::GGX:
+			return ggx_brdf(mat, wo, wi, n);
+		default:
+			return vec3(0,0,0);
+	}
+}
+
+__device__ inline double gpu_pdf_dir(const GpuMaterial& mat, const vec3& wo,
+									  const vec3& wi, const vec3& n) {
+	switch (mat.type) {
+		case MatType::LAMBERTIAN:
+		case MatType::SSS: {
+			double c = dot(n, wi);
+			if (c <= 0.0 || dot(n, wo) <= 0.0) return 0.0;
+			return c / GPU_PI;
+		}
+		case MatType::GGX: {
+			if (dot(n, wi) <= 0.0 || dot(n, wo) <= 0.0) return 0.0;
+			double a = (double)mat.roughness * (double)mat.roughness;
+			onb uvw; uvw.build_from_w(n);
+			vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
+			vec3 h   = unit_vector(wo + wi);
+			vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+			return ggx_vndf_pdf(wo_l, h_l, a);
+		}
+		default:
+			return 0.0;
+	}
+}
+
+__device__ inline GpuBSDFSample gpu_sample_dir(const GpuMaterial& mat,
+												const vec3& wo,
+												const GpuHitRecord& rec,
+												curandState* rng) {
+	GpuBSDFSample bs{};
+	bs.pdf = 0.0;
+	const vec3& n = rec.normal;
+
+	switch (mat.type) {
+		case MatType::LAMBERTIAN:
+		case MatType::SSS: {
+			if (dot(n, wo) <= 0.0) return bs;
+			onb uvw; uvw.build_from_w(n);
+			vec3   wi = unit_vector(uvw.local(rand_cosine_direction(rng)));
+			double c  = dot(n, wi);
+			if (c <= 0.0) return bs;
+			bs.wi = wi;
+			bs.f  = (mat.type == MatType::SSS) ? sss_brdf(mat, wi, n)
+											   : mat.albedo / GPU_PI;
+			bs.pdf = c / GPU_PI; bs.is_delta = false;
+			return bs;
+		}
+		case MatType::GGX: {
+			double a = (double)mat.roughness * (double)mat.roughness;
+			onb uvw; uvw.build_from_w(n);
+			vec3 wo_l(dot(wo, uvw.u()), dot(wo, uvw.v()), dot(wo, uvw.w()));
+			if (wo_l.z() <= 0.0) return bs;
+
+			vec3 h_l = ggx_sample_vndf(wo_l, a, rng);
+			vec3 h   = unit_vector(uvw.local(h_l));
+			vec3 wi  = unit_vector(reflect(-wo, h));
+			if (dot(wi, n) <= 0.0) return bs;
+
+			double p = ggx_vndf_pdf(wo_l, h_l, a);
+			if (p <= 0.0) return bs;
+
+			bs.wi = wi; bs.f = ggx_brdf(mat, wo, wi, n);
+			bs.pdf = p; bs.is_delta = false;
+			return bs;
+		}
+		case MatType::METAL: {
+			vec3 wi = unit_vector(reflect(-wo, n)
+								  + (double)mat.fuzz * rand_in_unit_sphere(rng));
+			double c = dot(wi, n);
+			if (c <= 0.0) return bs;
+			bs.wi = wi; bs.f = mat.albedo / fmax(fabs(c), 1e-9);
+			bs.pdf = 1.0; bs.is_delta = true;
+			return bs;
+		}
+		case MatType::DIELECTRIC: {
+			double ratio = rec.front_face ? (1.0/(double)mat.ir) : (double)mat.ir;
+			vec3   ud    = -wo;
+			double cos_t = fmin(dot(wo, n), 1.0);
+			double sin_t = sqrt(fmax(0.0, 1.0 - cos_t*cos_t));
+			vec3   dir   = (ratio*sin_t > 1.0
+							|| reflectance(cos_t, ratio) > rand_double(rng))
+						   ? reflect(ud, n)
+						   : refract(ud, n, ratio);
+			dir = unit_vector(dir);
+			bs.wi = dir;
+			bs.f  = vec3(1,1,1) / fmax(fabs(dot(dir, n)), 1e-9);
+			bs.pdf = 1.0; bs.is_delta = true;
+			return bs;
+		}
+		default:
+			return bs;   // DIFFUSE_LIGHT and anything unhandled
+	}
 }

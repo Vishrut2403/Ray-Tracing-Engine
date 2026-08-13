@@ -9,6 +9,14 @@
 
 class SceneUploader {
 public:
+	// Scenes the GPU can build; anything else used to silently render a Cornell
+	// box under the wrong name.
+	static bool supports(const std::string& n) {
+		return n == "cornell" || n == "furnace" || n == "ggx"   || n == "hdr"
+			|| n == "bunny"   || n == "glass"   || n == "caustics"
+			|| n == "volume"  || n == "sss";
+	}
+
 	static GpuScene build_and_upload(const std::string& scene_name = "cornell") {
 		if (scene_name == "ggx" || scene_name == "hdr")
 			return build_ggx_spheres(scene_name);
@@ -199,12 +207,8 @@ private:
 			int lid = (int)hits.size();
 			add_xz_rect(hits, -6, 6, -2, 2, 5.0f, light_id, true);
 			lids.push_back(lid);
-		} else {
-			int light_id = add_light(mats, vec3(3.f, 3.5f, 4.f));
-			int lid = (int)hits.size();
-			add_xz_rect(hits, -20, 20, -20, 20, 8.0f, light_id, true);
-			lids.push_back(lid);
 		}
+		// "hdr" is lit purely by the env map, uploaded from scene.env.
 
 		add_xz_rect(hits, -8, 8, -4, 4, -1.0f, floor_id, false);
 
@@ -283,7 +287,9 @@ private:
 		add_sphere(hits, vec3(278,180,278), 120.f, glass_id);
 		add_sphere(hits, vec3(150,100,150),  80.f, gold_id);
 
-		return finalise(mats, hits, lids, name);
+		GpuScene scene = finalise(mats, hits, lids, name);
+		scene.use_bdpt = true;  // Enable BDPT for caustics
+		return scene;
 	}
 
 	static GpuScene build_cornell_volume(const std::string& name) {

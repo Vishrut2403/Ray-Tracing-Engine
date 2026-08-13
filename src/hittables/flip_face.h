@@ -30,6 +30,20 @@ public:
 		return ptr->bounding_box(time0, time1, output_box);
 	}
 
+	virtual double pdf_value(const point3& o, const vec3& d) const override {
+		return ptr->pdf_value(o, d);
+	}
+	virtual vec3 random(const point3& o) const override { return ptr->random(o); }
+
+	// Normal stays as the wrapped shape reports it; callers pick the emitting side.
+	virtual double area() const override { return ptr->area(); }
+	virtual point3 sample_area(double u1, double u2, vec3& ng) const override {
+		return ptr->sample_area(u1, u2, ng);
+	}
+	virtual bool contains_point(const point3& p) const override {
+		return ptr->contains_point(p);
+	}
+
 public:
 	std::shared_ptr<hittable> ptr;
 };

@@ -24,7 +24,7 @@ Scene build_cornell_volume_scene()
 	auto red   = std::make_shared<lambertian>(color(.65, .05, .05));
 	auto white = std::make_shared<lambertian>(color(.73, .73, .73));
 	auto green = std::make_shared<lambertian>(color(.12, .45, .15));
-	auto light = std::make_shared<diffuse_light>(color(60, 60, 60));
+	auto light = std::make_shared<diffuse_light>(color(30, 28, 25));
 
 	// Left wall (green)
 	world_objects.add(

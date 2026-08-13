@@ -92,7 +92,7 @@ __device__ inline float gi_p_hat(
 
 	float brdf_w = 1.0f;
 	if (materials) {
-		vec3 f   = gpu_f(materials[gbuf.mat_id], wi, gbuf.normal);
+		vec3 f   = gpu_f_dir(materials[gbuf.mat_id], gbuf.wo, wi, gbuf.normal);
 		brdf_w   = fmaxf(0.0f, (float)(f.x() + f.y() + f.z()) / 3.0f);
 	}
 

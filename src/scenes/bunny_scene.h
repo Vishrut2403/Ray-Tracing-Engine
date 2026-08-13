@@ -27,7 +27,7 @@ inline Scene build_bunny_scene(
 
 	world.add(std::make_shared<xz_rect>(-5, 5, -5, 5, 0, floor_mat));
 
-	auto bunny = load_obj(obj_path, bunny_mat, 8.0, vec3(0, 0, 0));
+	auto bunny = load_obj(obj_path, bunny_mat, 8.0, vec3(0, 0.15, 0));
 	if (bunny) {
 		world.add(bunny);
 	} else {
