@@ -612,23 +612,22 @@ color Li(
 			vec3   wi        = to_light / distance;
 			double light_pdf = lights->pdf_value(rec.p, wi);
 			if (light_pdf > 0.0) {
-				hit_record sr;
-				bool occ = world->hit(ray(rec.p, wi, r.time()),
-									  interval(0.001, distance-1e-4), sr);
-				if (!occ) {
-					hit_record lr;
-					if (world->hit(ray(rec.p,wi,r.time()),
-								   interval(0.001,infinity),lr)) {
-						color Le2 = lr.mat_ptr->emitted(
-							ray(rec.p,wi,r.time()),lr,lr.u,lr.v,lr.p);
-						if (Le2.length_squared() > 0.0) {
-							color  f   = rec.mat_ptr->f(r, wi, rec);
-							double bp  = rec.mat_ptr->pdf(r, wi, rec);
-							double wt  = power_heuristic(light_pdf, bp);
-							double ct  = std::abs(dot(rec.normal, wi));
-							L += beta * f * Le2 * ct * wt / light_pdf;
-						}
-					}
+				hit_record lr;
+				bool blocked = world->hit(ray(rec.p, wi, r.time()),
+										  interval(0.001, infinity), lr);
+				color Le2(0,0,0);
+				if (blocked)
+					Le2 = lr.mat_ptr->emitted(ray(rec.p,wi,r.time()),
+											  lr, lr.u, lr.v, lr.p);
+				else if (env)
+					Le2 = env->Le(wi);
+
+				if (Le2.length_squared() > 0.0) {
+					color  f   = rec.mat_ptr->f(r, wi, rec);
+					double bp  = rec.mat_ptr->pdf(r, wi, rec);
+					double wt  = power_heuristic(light_pdf, bp);
+					double ct  = std::abs(dot(rec.normal, wi));
+					L += beta * f * Le2 * ct * wt / light_pdf;
 				}
 			}
 		}

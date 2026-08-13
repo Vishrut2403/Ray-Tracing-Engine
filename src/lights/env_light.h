@@ -32,10 +32,11 @@ public:
 		int col = lower_bound(conditional_cdf[row], r2);
 		col = clamp_idx(col, tex->get_width() - 1);
 
-		double u   = (col + 0.5) / tex->get_width();
-		double v   = (row + 0.5) / tex->get_height();
-		double phi = 2.0 * pi * u;
-		double theta = pi * (1.0 - v);
+		double u     = (col + 0.5) / tex->get_width();
+		double v     = (row + 0.5) / tex->get_height();
+		// Must invert Le's mapping: row 0 is the zenith, u = 0.5 is phi = 0.
+		double phi   = 2.0 * pi * (u - 0.5);
+		double theta = pi * v;
 
 		return vec3(
 			sin(theta) * cos(phi),
@@ -47,7 +48,7 @@ public:
 	virtual double pdf_value(const point3&, const vec3& dir) const override {
 		vec3 d = unit_vector(dir);
 		double u = 0.5 + atan2(d.z(), d.x()) / (2.0 * pi);
-		double v = 0.5 + asin(clamp(d.y(), -1.0, 1.0)) / pi;
+		double v = 0.5 - asin(clamp(d.y(), -1.0, 1.0)) / pi;   // row 0 = zenith
 
 		int col = clamp_idx((int)(u * tex->get_width()),  tex->get_width()  - 1);
 		int row = clamp_idx((int)(v * tex->get_height()), tex->get_height() - 1);
@@ -55,8 +56,10 @@ public:
 		double sin_theta = sqrt(1.0 - d.y() * d.y());
 		if (sin_theta < 1e-8) return 0.0;
 
+		// pixel_pdf is a per-pixel mass; * W*H makes it a density over (u,v).
 		double p = pixel_pdf[row * tex->get_width() + col];
-		return p / (sin_theta * 2.0 * pi * pi);
+		double n = (double)tex->get_width() * tex->get_height();
+		return p * n / (sin_theta * 2.0 * pi * pi);
 	}
 
 	color Le(const vec3& dir) const {

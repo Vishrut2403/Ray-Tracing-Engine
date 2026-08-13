@@ -83,7 +83,8 @@ __device__ vec3 gpu_Li(
 					  ? gpu_env_Le(*env_map, r.direction())
 					  : background;
 
-			if (specular_bounce || n_lights == 0 || depth == 0) {
+			bool has_env = (env_map && env_map->valid);
+			if (specular_bounce || depth == 0 || (n_lights == 0 && !has_env)) {
 				L = L + beta * Le;
 			} else {
 				// rec is unwritten on a miss; use the previous vertex.

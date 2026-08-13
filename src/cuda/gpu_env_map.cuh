@@ -46,8 +46,9 @@ __device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, curandState* rng,
 
 	double u     = (col + 0.5) / W;
 	double v     = (row + 0.5) / H;
-	double phi   = 2.0 * 3.14159265358979 * u;
-	double theta = 3.14159265358979 * (1.0 - v);
+	// Must invert gpu_env_Le: row 0 is the zenith, u = 0.5 is phi = 0.
+	double phi   = 2.0 * 3.14159265358979 * (u - 0.5);
+	double theta = 3.14159265358979 * v;
 
 	double sin_theta = sin(theta);
 	double cos_theta = cos(theta);
@@ -56,9 +57,11 @@ __device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, curandState* rng,
 			 cos_theta,
 			 sin_theta * sin(phi));
 
+	// pixel_pdf is a per-pixel mass; * W*H makes it a density over (u,v).
 	float p = env.d_pixel_pdf[row * W + col];
+	double n = (double)W * H;
 	out_pdf = (sin_theta > 1e-8f)
-			  ? p / (float)(sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979)
+			  ? (float)(p * n / (sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979))
 			  : 0.0f;
 
 	return dir;
@@ -96,5 +99,6 @@ __device__ inline float gpu_env_pdf(const GpuEnvMap& env, const vec3& dir) {
 	if (sin_theta < 1e-8) return 0.0f;
 
 	float p = env.d_pixel_pdf[j * env.width + i];
-	return p / (float)(sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979);
+	double n = (double)env.width * env.height;
+	return (float)(p * n / (sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979));
 }
