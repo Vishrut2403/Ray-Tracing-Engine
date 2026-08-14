@@ -30,47 +30,46 @@ list(FILTER CPU_SRC EXCLUDE REGEX ".*intellisense\\.cpp$")
 # GPU sources
 file(GLOB_RECURSE CUDA_SRC CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cu)
 
+# Tests bring their own main.
+set(TEST_SRC ${CMAKE_SOURCE_DIR}/src/tests/test_main.cpp)
+list(FILTER CPU_SRC EXCLUDE REGEX ".*/tests/.*")
+set(CORE_SRC ${CPU_SRC})
+list(FILTER CORE_SRC EXCLUDE REGEX ".*/main\\.cpp$")
+
 add_executable(render ${CPU_SRC} ${CUDA_SRC})
+add_executable(tests  ${CORE_SRC} ${CUDA_SRC} ${TEST_SRC})
 
-target_include_directories(render PRIVATE
-    ${CMAKE_SOURCE_DIR}/src
-    ${CMAKE_SOURCE_DIR}/src/external
-    ${CMAKE_SOURCE_DIR}/src/cuda
-)
-
-target_include_directories(render BEFORE PRIVATE
-    ${GCC_INCLUDE_FIXED}
-    ${GCC_INCLUDE}
-)
-
-# Allow .cu files to include project headers
-set_target_properties(render PROPERTIES
-    CUDA_SEPARABLE_COMPILATION ON
-)
-
-# OpenMP
 find_package(OpenMP REQUIRED)
-target_link_libraries(render PRIVATE OpenMP::OpenMP_CXX)
-
-# OpenGL
 find_package(OpenGL REQUIRED)
-target_link_libraries(render PRIVATE OpenGL::GL)
-
 find_package(glfw3 3.3 REQUIRED)
-target_link_libraries(render PRIVATE glfw)
+find_package(CUDAToolkit REQUIRED)
+find_package(OpenImageDenoise REQUIRED)
 
 add_library(glad ${CMAKE_SOURCE_DIR}/src/external/glad.c)
 target_include_directories(glad PUBLIC ${CMAKE_SOURCE_DIR}/src/external)
-target_link_libraries(render PRIVATE glad)
 
-if(UNIX AND NOT APPLE)
-    target_link_libraries(render PRIVATE dl)
-endif()
-
-# CUDA runtime + cuRAND
-find_package(CUDAToolkit REQUIRED)
-target_link_libraries(render PRIVATE CUDA::cudart CUDA::curand)
-
-# OIDN 
-find_package(OpenImageDenoise REQUIRED)
-target_link_libraries(render PRIVATE OpenImageDenoise)
+foreach(tgt render tests)
+    target_include_directories(${tgt} PRIVATE
+        ${CMAKE_SOURCE_DIR}/src
+        ${CMAKE_SOURCE_DIR}/src/external
+        ${CMAKE_SOURCE_DIR}/src/cuda
+    )
+    target_include_directories(${tgt} BEFORE PRIVATE
+        ${GCC_INCLUDE_FIXED}
+        ${GCC_INCLUDE}
+    )
+    # Allow .cu files to include project headers
+    set_target_properties(${tgt} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    target_link_libraries(${tgt} PRIVATE
+        OpenMP::OpenMP_CXX
+        OpenGL::GL
+        glfw
+        glad
+        CUDA::cudart
+        CUDA::curand
+        OpenImageDenoise
+    )
+    if(UNIX AND NOT APPLE)
+        target_link_libraries(${tgt} PRIVATE dl)
+    endif()
+endforeach()
