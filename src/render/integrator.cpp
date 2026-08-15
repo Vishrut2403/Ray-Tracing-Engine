@@ -268,7 +268,8 @@ static int random_walk(const std::shared_ptr<hittable>& world,
 		pdf_rev = bs.is_delta ? 0.0 : rec.mat_ptr->pdf_dir(bs.wi, wo, rec);
 		if (bs.is_delta) { v.delta = true; pdf_fwd = 0.0; }
 
-		color nb = beta * bs.f * (std::abs(dot(rec.normal, bs.wi)) / bs.pdf);
+		color nb = bs.is_phase ? beta * (bs.f / bs.pdf)
+							   : beta * bs.f * (std::abs(dot(rec.normal, bs.wi)) / bs.pdf);
 		if (!is_valid(nb) || nb.length_squared() <= 0.0) break;
 		beta = nb;
 
@@ -626,7 +627,8 @@ color Li(
 					color  f   = rec.mat_ptr->f(r, wi, rec);
 					double bp  = rec.mat_ptr->pdf(r, wi, rec);
 					double wt  = power_heuristic(light_pdf, bp);
-					double ct  = std::abs(dot(rec.normal, wi));
+					double ct  = rec.mat_ptr->is_phase_function()
+								 ? 1.0 : std::abs(dot(rec.normal, wi));
 					L += beta * f * Le2 * ct * wt / light_pdf;
 				}
 			}
@@ -635,7 +637,8 @@ color Li(
 		BSDFSample bs = rec.mat_ptr->sample(r, rec);
 		if (bs.pdf <= 0.0) break;
 		last_bsdf_pdf = bs.pdf;
-		if (bs.is_delta) { beta *= bs.f; specular_bounce = true; }
+		if (bs.is_delta)      { beta *= bs.f; specular_bounce = true; }
+		else if (bs.is_phase) { beta *= bs.f / bs.pdf; specular_bounce = false; }
 		else { beta *= bs.f * std::abs(dot(rec.normal,bs.wi)) / bs.pdf; specular_bounce = false; }
 		if (depth >= 3) {
 			double s = std::clamp(beta.max_component(), 0.05, 0.95);

@@ -147,6 +147,115 @@ __device__ inline GpuBSDFSample ggx_sample_lobes(const GpuMaterial& mat,
 	return bs;
 }
 
+// Microfacet dielectric (Walter et al. 2007); mirrors the CPU `rough_dielectric`.
+__device__ inline double rd_schlick(double cos_theta, double eta) {
+	double r0 = (1.0 - eta) / (1.0 + eta); r0 *= r0;
+	return r0 + (1.0 - r0) * pow(1.0 - cos_theta, 5.0);
+}
+
+__device__ inline bool rd_refract(const vec3& v, const vec3& h,
+								   double eta, vec3& out) {
+	double cos_i  = dot(v, h);
+	double sin2_t = eta*eta * (1.0 - cos_i*cos_i);
+	if (sin2_t >= 1.0) return false;
+	out = (eta * cos_i - sqrt(1.0 - sin2_t)) * h - eta * v;
+	return true;
+}
+
+__device__ inline double rd_pdf_transmission(const vec3& v_l, const vec3& h_l,
+											  const vec3& wi, const vec3& h,
+											  double eta, double a) {
+	double vdoth = fmax(dot(v_l, h_l), 1e-7);
+	double idoth = fmax(-dot(wi, h), 1e-7);
+	double denom = eta * vdoth + idoth;
+	double jac   = idoth / (denom*denom);
+	double ndoth = fmax(h_l.z(), 1e-7);
+	double ndov  = fmax(v_l.z(), 1e-7);
+	return ggx_D(ndoth, a) * ggx_G1(ndov, a) * vdoth / ndov * jac;
+}
+
+__device__ inline bool rd_eval(const GpuMaterial& mat, const vec3& v,
+								const vec3& wi, const vec3& n, bool front_face,
+								vec3& f_out, double& pdf_out) {
+	double alpha = (double)mat.roughness * (double)mat.roughness;
+	double eta   = front_face ? (1.0 / (double)mat.ir) : (double)mat.ir;
+
+	double ndotv = dot(n, v), ndotl = dot(n, wi);
+	if (ndotv <= 1e-7) return false;
+
+	onb uvw; uvw.build_from_w(n);
+	vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+
+	if (ndotl > 0.0) {
+		vec3 h = unit_vector(v + wi);
+		if (dot(h, n) < 0.0) h = -h;
+		double vdoth = fmin(fmax(dot(v, h), 0.0), 1.0);
+		double ndoth = fmax(dot(n, h), 1e-7);
+		double F = rd_schlick(vdoth, eta);
+		double D = ggx_D(ndoth, alpha);
+		double G = ggx_G2(ndotv, fmax(ndotl, 1e-7), alpha);
+		f_out = vec3(F,F,F) * (D * G / (4.0 * ndotv * fmax(ndotl, 1e-7)));
+		vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+		pdf_out = F * ggx_vndf_pdf(v_l, h_l, alpha);
+		return true;
+	}
+
+	vec3 h = eta * v - wi;
+	if (h.length_squared() < 1e-14) return false;
+	h = unit_vector(h);
+	if (dot(h, n) < 0.0) h = -h;
+
+	double vdoth = dot(v, h), idoth = -dot(wi, h);
+	if (vdoth <= 1e-7 || idoth <= 1e-7) return false;
+
+	double ndoth = fmax(dot(n, h), 1e-7);
+	double al    = fmax(-ndotl, 1e-7);
+	double F = rd_schlick(fmin(fmax(vdoth,0.0),1.0), eta);
+	double D = ggx_D(ndoth, alpha);
+	double G = ggx_G2(ndotv, al, alpha);
+	double denom = eta * vdoth + idoth;
+	if (fabs(denom) < 1e-9) return false;
+
+	f_out = mat.albedo * ((1.0 - F) * D * G * vdoth * idoth
+						  / (ndotv * al * denom * denom));
+	vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+	pdf_out = (1.0 - F) * rd_pdf_transmission(v_l, h_l, wi, h, eta, alpha);
+	return true;
+}
+
+__device__ inline GpuBSDFSample rd_sample(const GpuMaterial& mat, const vec3& v,
+										   const vec3& n, bool front_face,
+										   curandState* rng) {
+	GpuBSDFSample bs{}; bs.pdf = 0.0;
+	double alpha = (double)mat.roughness * (double)mat.roughness;
+	double eta   = front_face ? (1.0 / (double)mat.ir) : (double)mat.ir;
+	if (dot(n, v) <= 0.0) return bs;
+
+	onb uvw; uvw.build_from_w(n);
+	vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+	if (v_l.z() <= 0.0) return bs;
+	vec3 h_l = ggx_sample_vndf(v_l, alpha, rng);
+	vec3 h   = unit_vector(uvw.local(h_l));
+	if (dot(h, v) < 0.0) h = -h;
+
+	double F = rd_schlick(fmin(fmax(dot(v, h), 0.0), 1.0), eta);
+
+	vec3 wi;
+	bool want_reflect = rand_double(rng) < F;
+	if (!want_reflect) {
+		vec3 t;
+		if (rd_refract(-v, h, eta, t)) wi = unit_vector(t);
+		else want_reflect = true;
+	}
+	if (want_reflect) wi = unit_vector(reflect(-v, h));
+	if (want_reflect ? dot(wi, n) <= 0.0 : dot(wi, n) >= 0.0) return bs;
+
+	vec3 f; double p;
+	if (!rd_eval(mat, v, wi, n, front_face, f, p) || p <= 0.0) return bs;
+	bs.wi = wi; bs.f = f; bs.pdf = p; bs.is_delta = false;
+	return bs;
+}
+
 // SSS — Jensen dipole as a diffusion BRDF; mirrors the CPU `subsurface` class.
 // mat.mfp does not affect shading: Rd is scale-invariant in the exit radius and
 // the exit point stays pinned to the entry point.
@@ -186,42 +295,7 @@ __device__ inline vec3 sss_brdf(const GpuMaterial& mat,
 	return sss_Rd_total(mat.albedo, eta) * (T_entry * T_exit / GPU_PI);
 }
 
-// Public interface
 
-__device__ inline vec3 gpu_f(const GpuMaterial& mat,
-							   const vec3& wi, const vec3& normal) {
-	if (mat.type == MatType::LAMBERTIAN) {
-		if (dot(normal, wi) <= 0.0) return vec3(0,0,0);
-		return mat.albedo / GPU_PI;
-	}
-	if (mat.type == MatType::GGX) {
-		// Cosine-free like LAMBERTIAN. No outgoing direction here, so the view
-		// vector is approximated by the normal; gpu_f_dir does it properly.
-		if (dot(normal, wi) <= 0.0) return vec3(0,0,0);
-		return ggx_brdf(mat, normal, wi, normal);
-	}
-	if (mat.type == MatType::SSS) {
-		return sss_brdf(mat, wi, normal);
-	}
-	return vec3(0,0,0);
-}
-
-__device__ inline double gpu_pdf(const GpuMaterial& mat,
-								  const vec3& wi, const vec3& normal) {
-	if (mat.type == MatType::LAMBERTIAN) {
-		double c = dot(normal, wi);
-		return c > 0.0 ? c / GPU_PI : 0.0;
-	}
-	if (mat.type == MatType::GGX) {
-		double c = dot(normal, wi);
-		return c > 0.0 ? c / GPU_PI : 0.0;
-	}
-	if (mat.type == MatType::SSS) {
-		double c = dot(normal, wi);
-		return c > 0.0 ? c / GPU_PI : 0.0;
-	}
-	return 0.0;
-}
 
 __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 											const ray& wo,
@@ -267,6 +341,15 @@ __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 		return { wi, sss_brdf(mat, wi, rec.normal), c / GPU_PI, false };
 	}
 
+	if (mat.type == MatType::ISOTROPIC) {
+		vec3 wi = rand_unit_vector(rng);
+		return { wi, mat.albedo / (4.0*GPU_PI), 1.0/(4.0*GPU_PI), false };
+	}
+
+	if (mat.type == MatType::ROUGH_DIELECTRIC)
+		return rd_sample(mat, -unit_vector(wo.direction()), rec.normal,
+						 rec.front_face, rng);
+
 	return bs;
 }
 
@@ -286,6 +369,12 @@ __device__ inline vec3 gpu_f_dir(const GpuMaterial& mat, const vec3& wo,
 			return sss_brdf(mat, wi, n);
 		case MatType::GGX:
 			return ggx_brdf(mat, wo, wi, n);
+		case MatType::ISOTROPIC:
+			return mat.albedo / (4.0 * GPU_PI);
+		case MatType::ROUGH_DIELECTRIC: {
+			vec3 f; double p;
+			return rd_eval(mat, wo, wi, n, true, f, p) ? f : vec3(0,0,0);
+		}
 		default:
 			return vec3(0,0,0);
 	}
@@ -302,6 +391,12 @@ __device__ inline double gpu_pdf_dir(const GpuMaterial& mat, const vec3& wo,
 		}
 		case MatType::GGX:
 			return ggx_combined_pdf(mat, wo, wi, n);
+		case MatType::ISOTROPIC:
+			return 1.0 / (4.0 * GPU_PI);
+		case MatType::ROUGH_DIELECTRIC: {
+			vec3 f; double p;
+			return rd_eval(mat, wo, wi, n, true, f, p) ? p : 0.0;
+		}
 		default:
 			return 0.0;
 	}
@@ -331,6 +426,14 @@ __device__ inline GpuBSDFSample gpu_sample_dir(const GpuMaterial& mat,
 		}
 		case MatType::GGX:
 			return ggx_sample_lobes(mat, wo, n, rng);
+		case MatType::ISOTROPIC: {
+			bs.wi = rand_unit_vector(rng);
+			bs.f  = mat.albedo / (4.0 * GPU_PI);
+			bs.pdf = 1.0 / (4.0 * GPU_PI); bs.is_delta = false;
+			return bs;
+		}
+		case MatType::ROUGH_DIELECTRIC:
+			return rd_sample(mat, wo, n, rec.front_face, rng);
 		case MatType::METAL: {
 			vec3 wi = unit_vector(reflect(-wo, n)
 								  + (double)mat.fuzz * rand_in_unit_sphere(rng));

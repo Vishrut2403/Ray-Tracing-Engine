@@ -13,10 +13,9 @@
 #include "materials/material.h"
 #include "acceleration/bvh.h"
 
-// Cornell box with a participating medium. The backends model it differently
-// and will not match numerically: the GPU uses a global medium with a
-// Henyey-Greenstein phase function (g = 0.2), the CPU a bounded constant_medium
-// scattering isotropically. Only the extinction is matched.
+// Cornell box with a participating medium. Both backends model the same one:
+// sigma_t = 0.003, scattering albedo 0.9, Henyey-Greenstein g = 0.2, bounded by
+// the 0..555 box. Keep the two definitions in step or they stop matching.
 inline Scene build_volume_scene() {
 	Scene scene;
 	hittable_list world;
@@ -57,7 +56,7 @@ inline Scene build_volume_scene() {
 	auto fog_bounds =
 		std::make_shared<box>(point3(0,0,0), point3(555,555,555), white);
 	world.add(std::make_shared<constant_medium>(
-		fog_bounds, 0.003, color(0.9, 0.9, 0.9)));
+		fog_bounds, 0.003, color(0.9, 0.9, 0.9), 0.2));
 
 	scene.world  = std::make_shared<bvh_node>(
 		world.objects, 0, world.objects.size(), 0.0, 1.0);

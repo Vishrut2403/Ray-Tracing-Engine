@@ -12,7 +12,8 @@ enum class MatType : int {
 	DIFFUSE_LIGHT,
 	ISOTROPIC,
 	GGX,
-	SSS          // Subsurface scattering — Jensen dipole
+	SSS,             // Subsurface scattering — Jensen dipole
+	ROUGH_DIELECTRIC // microfacet dielectric; roughness + ir
 };
 
 struct GpuMaterial {
@@ -60,6 +61,7 @@ struct GpuMedium {
 	vec3  sigma_s;
 	vec3  sigma_a;
 	vec3  sigma_t;
+	vec3  bmin, bmax;   // the medium fills this box only
 	float g;
 	bool  active;
 };
@@ -83,7 +85,7 @@ struct GpuScene {
 	GpuEnvMap*      d_env_map      = nullptr;
 	bool            has_env_map    = false;
 
-	GpuMedium       medium         = {{}, {}, {}, 0.0f, false};
+	GpuMedium       medium         = {{}, {}, {}, {}, {}, 0.0f, false};
 
 	bool            use_bdpt       = false;  // Enable BDPT for caustics
 

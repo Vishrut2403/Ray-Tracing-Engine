@@ -1,6 +1,3 @@
-// GPU material checks: the CPU suite's four properties, plus CPU/GPU value
-// equivalence — the two implementations are separate code.
-
 #include "tests/test_util.h"
 #include "materials/material.h"
 #include "cuda/gpu_material.cuh"
@@ -133,6 +130,13 @@ void run_gpu_tests() {
 		{ "ggx(rough 0.5, metallic 0)",
 		  mk(MatType::GGX, vec3(0.25,0.5,0.75), 0,0, 0.5f, 0.0f, 0),
 		  std::make_shared<ggx>(color(0.25,0.5,0.75), 0.5, 0.0), -1.0, 0.0, true },
+		{ "isotropic(0.5)",
+		  mk(MatType::ISOTROPIC, vec3(0.5,0.5,0.5), 0,0,0,0,0),
+		  std::make_shared<isotropic>(color(0.5,0.5,0.5)), -1.0, 0.0, true },
+		{ "rough_dielectric(rough 0.25, ior 1.5)",
+		  mk(MatType::ROUGH_DIELECTRIC, vec3(1,1,1), 0, 1.5f, 0.25f, 0, 0),
+		  std::make_shared<rough_dielectric>(color(1,1,1), 0.25, 1.5),
+		  -1.0, 0.0, false },
 		{ "subsurface(0.75, mfp 0.125)",
 		  mk(MatType::SSS, vec3(0.75,0.75,0.75), 0, 1.5f, 0,0, 0.125f),
 		  std::make_shared<subsurface>(color(0.75,0.75,0.75), 0.125, 1.5),

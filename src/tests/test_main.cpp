@@ -122,27 +122,37 @@ static void test_reciprocity(const std::string& name,
 }
 
 // White furnace: E[f*cos/pdf] must match the known albedo and stay <= 1.
+// Swept over incidence: normal incidence has cos = 1 and hides a missing
+// 1/|cos|, and grazing is where the Smith shadowing term goes wrong.
 static void test_reflectance(const std::string& name,
 							  const std::shared_ptr<material>& mat,
 							  const vec3& n, double expected, double tol,
-							  int N = 200000) {
-	hit_record rec = make_rec(n);
+							  bool front_face = true, int N = 200000) {
+	hit_record rec = make_rec(n, front_face);
 	onb uvw; uvw.build_from_w(n);
-	// Oblique: at normal incidence cos = 1 hides a missing 1/|cos|.
-	vec3 wo = unit_vector(uvw.local(vec3(0.7, 0.0, 0.7)));
 
-	double sum = 0.0;
-	for (int i = 0; i < N; ++i) {
-		BSDFSample bs = mat->sample_dir(wo, rec);
-		if (bs.pdf <= 0.0) continue;
-		double c = std::abs(dot(n, bs.wi));
-		sum += lum(bs.f) * c / bs.pdf;
+	for (double ct : { 0.95, 0.7, 0.35, 0.12 }) {
+		double st = std::sqrt(std::max(0.0, 1.0 - ct*ct));
+		vec3   wo = unit_vector(uvw.local(vec3(st, 0.0, ct)));
+
+		char tag[32];
+		std::snprintf(tag, sizeof(tag), " [cos %.2f]", ct);
+		std::string at = name + std::string(tag);
+
+		double sum = 0.0;
+		for (int i = 0; i < N; ++i) {
+			BSDFSample bs = mat->sample_dir(wo, rec);
+			if (bs.pdf <= 0.0) continue;
+			double c = std::abs(dot(n, bs.wi));
+			sum += lum(bs.f) * c / bs.pdf;
+		}
+		double rho = sum / N;
+		check(rho <= 1.0 + 1e-3, at + ": reflectance <= 1 (energy)",
+			  rho, 1.0, 1e-3);
+		if (expected >= 0.0)
+			check(std::abs(rho - expected) < tol,
+				  at + ": reflectance matches albedo", rho, expected, tol);
 	}
-	double rho = sum / N;
-	check(rho <= 1.0 + 1e-3, name + ": reflectance <= 1 (energy)", rho, 1.0, 1e-3);
-	if (expected >= 0.0)
-		check(std::abs(rho - expected) < tol,
-			  name + ": reflectance matches albedo", rho, expected, tol);
 }
 
 int main() {
@@ -156,6 +166,7 @@ int main() {
 		double expected_rho;   // negative = only check the <= 1 bound
 		double tol;
 		bool   reciprocal;   // subsurface averages entry Fresnel, so it is not
+		bool   front_face = true;
 	};
 
 	std::vector<Case> cases = {
@@ -183,16 +194,33 @@ int main() {
 		  std::make_shared<rough_dielectric>(color(1,1,1), 0.3, 1.5), -1.0, 0.0, false },
 		{ "rough_dielectric(rough 0.6, ior 1.5)",
 		  std::make_shared<rough_dielectric>(color(1,1,1), 0.6, 1.5), -1.0, 0.0, false },
+		{ "ggx(rough 0.1, metallic 1)",
+		  std::make_shared<ggx>(color(0.9,0.9,0.9), 0.1, 1.0), -1.0, 0.0, true },
+		{ "ggx(rough 0.8, metallic 0)",
+		  std::make_shared<ggx>(color(0.8,0.8,0.8), 0.8, 0.0), -1.0, 0.0, true },
+		{ "ggx(rough 1.0, metallic 1)",
+		  std::make_shared<ggx>(color(0.7,0.7,0.7), 1.0, 1.0), -1.0, 0.0, true },
+		{ "subsurface(0.5, mfp 1.0)",
+		  std::make_shared<subsurface>(color(0.5,0.5,0.5), 1.0, 1.33), -1.0, 0.0, false },
+		// From inside the surface: exercises total internal reflection.
+		{ "rough_dielectric(rough 0.3, inside)",
+		  std::make_shared<rough_dielectric>(color(1,1,1), 0.3, 1.5), -1.0, 0.0,
+		  false, false },
+		{ "dielectric(1.5, inside)",
+		  std::make_shared<dielectric>(1.5), 1.0, 0.01, true, false },
 	};
 
 	for (const auto& c : cases) {
 		test_sample_pdf_agree(c.name, c.mat, n);
 		test_pdf_normalized  (c.name, c.mat, n);
-		test_reflectance     (c.name, c.mat, n, c.expected_rho, c.tol);
+		test_reflectance     (c.name, c.mat, n, c.expected_rho, c.tol,
+		                      c.front_face);
 		if (c.reciprocal) test_reciprocity(c.name, c.mat, n);
 	}
 
 	run_gpu_tests();
+	run_medium_tests();
+	run_render_tests();
 
 	std::printf("%d checks, %d failed\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;

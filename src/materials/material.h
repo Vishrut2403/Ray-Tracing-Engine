@@ -36,6 +36,10 @@ public:
 	virtual BSDFSample sample_dir(const vec3&, const hit_record&) const {
 		return { vec3(0,0,0), color(0,0,0), 0.0, false };
 	}
+
+	// True for participating-media phase functions, which have no surface
+	// normal and so take no cosine factor.
+	virtual bool is_phase_function() const { return false; }
 };
 
 class lambertian : public material {
@@ -320,41 +324,67 @@ public:
 	virtual double pdf(const ray&, const vec3&, const hit_record&) const override { return 0.0; }
 };
 
+// Henyey-Greenstein phase function; g = 0 is isotropic. Mirrors hg_phase /
+// hg_sample on the GPU so both backends model the same medium.
 class isotropic : public material {
 public:
+	virtual bool is_phase_function() const override { return true; }
+
 	std::shared_ptr<texture> albedo;
+	double g;
 
-	isotropic(const color& c) : albedo(std::make_shared<solid_color>(c)) {}
-	isotropic(std::shared_ptr<texture> a) : albedo(a) {}
+	isotropic(const color& c, double g_ = 0.0)
+		: albedo(std::make_shared<solid_color>(c)), g(clamp(g_, -0.99, 0.99)) {}
+	isotropic(std::shared_ptr<texture> a, double g_ = 0.0)
+		: albedo(a), g(clamp(g_, -0.99, 0.99)) {}
 
-	virtual BSDFSample sample(const ray&, const hit_record& rec) const override {
-		vec3 wi  = random_unit_vector();
-		color rho = albedo->value(rec.u, rec.v, rec.p);
-		return { wi, rho / (4.0*pi), 1.0/(4.0*pi), false };
+	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
+		return sample_dir(-unit_vector(wo.direction()), rec);
 	}
 
-	virtual color f(const ray&, const vec3&, const hit_record& rec) const override {
-		return albedo->value(rec.u, rec.v, rec.p) / (4.0 * pi);
+	virtual color f(const ray& wo, const vec3& wi, const hit_record& rec) const override {
+		return f_dir(-unit_vector(wo.direction()), wi, rec);
 	}
 
-	virtual double pdf(const ray&, const vec3&, const hit_record&) const override {
-		return 1.0 / (4.0 * pi);
+	virtual double pdf(const ray& wo, const vec3& wi, const hit_record& rec) const override {
+		return pdf_dir(-unit_vector(wo.direction()), wi, rec);
 	}
 
-	// Phase function: spherical, independent of both directions.
-	virtual color f_dir(const vec3&, const vec3&,
+	// A phase function is spherical: wo points back along the incoming ray, so
+	// the scattering angle is measured against -wo.
+	virtual color f_dir(const vec3& wo, const vec3& wi,
 						const hit_record& rec) const override {
-		return albedo->value(rec.u, rec.v, rec.p) / (4.0 * pi);
+		return albedo->value(rec.u, rec.v, rec.p) * hg(dot(-wo, wi));
 	}
-	virtual double pdf_dir(const vec3&, const vec3&,
+	virtual double pdf_dir(const vec3& wo, const vec3& wi,
 						   const hit_record&) const override {
-		return 1.0 / (4.0 * pi);
+		return hg(dot(-wo, wi));
 	}
-	virtual BSDFSample sample_dir(const vec3&,
+	virtual BSDFSample sample_dir(const vec3& wo,
 								  const hit_record& rec) const override {
-		vec3 wi = random_unit_vector();
-		return { wi, albedo->value(rec.u, rec.v, rec.p) / (4.0*pi),
-				 1.0/(4.0*pi), false };
+		double cos_t;
+		if (std::abs(g) < 1e-4) {
+			cos_t = 1.0 - 2.0 * random_double();
+		} else {
+			double xi  = random_double();
+			double sqr = (1.0 - g*g) / (1.0 - g + 2.0*g*xi);
+			cos_t = (1.0 + g*g - sqr*sqr) / (2.0*g);
+		}
+		double sin_t = std::sqrt(std::max(0.0, 1.0 - cos_t*cos_t));
+		double phi   = 2.0 * pi * random_double();
+
+		onb uvw; uvw.build_from_w(-wo);
+		vec3 wi = unit_vector(uvw.local(vec3(sin_t*std::cos(phi),
+											 sin_t*std::sin(phi), cos_t)));
+		return { wi, albedo->value(rec.u, rec.v, rec.p) * hg(dot(-wo, wi)),
+				 hg(dot(-wo, wi)), false, true };
+	}
+
+private:
+	double hg(double cos_t) const {
+		double g2  = g*g;
+		double den = 1.0 + g2 - 2.0*g*cos_t;
+		return (1.0 - g2) / (4.0*pi * den * std::sqrt(den) + 1e-12);
 	}
 };
 

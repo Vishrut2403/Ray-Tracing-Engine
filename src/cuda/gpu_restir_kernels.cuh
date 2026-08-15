@@ -412,7 +412,7 @@ __global__ void restir_shade_kernel(
 											materials[lr.mat_id], lr.front_face);
 										if (lLe.length_squared() > 0.0) {
 											float cos_s = (float)dot(
-												unit_vector(ms.wi),
+												unit_vector(indirect_ray.direction()),
 												unit_vector(wl));
 											float phase = hg_phase(cos_s,
 																	medium.g);

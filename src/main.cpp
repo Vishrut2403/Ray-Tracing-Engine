@@ -60,12 +60,6 @@ int main(int argc, char** argv)
 		use_gpu = false;
 	}
 
-	// The GPU medium only exists in the ReSTIR shading kernel.
-	if (use_gpu && config.feature == "volume" && !want_restir) {
-		std::cerr << "[note] scene 'volume' needs the ReSTIR integrator on GPU "
-					 "for its participating medium; selecting it\n";
-		want_restir = true;
-	}
 	GpuIntegrator gpu_integrator = want_restir ? GpuIntegrator::RESTIR
 											   : GpuIntegrator::PATH_TRACER;
 

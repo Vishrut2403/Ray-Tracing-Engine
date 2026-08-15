@@ -79,14 +79,37 @@ void PPMRenderer::render(
 			  << "  photons/iter=" << photons_per_iter
 			  << "  r0=" << initial_radius << "\n";
 
-	color  Le_light(15.0, 12.5, 10.0);
-	double lx0=213,lx1=343,lz0=227,lz1=332,ly=554;
-	double light_area=(lx1-lx0)*(lz1-lz0);
-	vec3   light_n(0,-1,0);
+	// Emitter taken from the scene. Hardcoding it made this renderer correct
+	// only for Cornell-shaped scenes.
+	std::shared_ptr<hittable> light_obj;
+	if (scene.lights)
+		for (const auto& o : scene.lights->objects)
+			if (o->area() > 0.0) { light_obj = o; break; }
+	if (!light_obj) {
+		std::cerr << "[PPM] no area light in scene; nothing to trace\n";
+		return;
+	}
+
+	double light_area = light_obj->area();
+	vec3   probe_ng;
+	point3 probe_p = light_obj->sample_area(0.5, 0.5, probe_ng);
+	vec3   light_n = probe_ng;
+	color  Le_light(0,0,0);
+	for (int side = 0; side < 2 && Le_light.length_squared() == 0.0; ++side) {
+		vec3   nn = (side == 0) ? probe_ng : -probe_ng;
+		ray    probe(probe_p + nn*1e-3, -nn, 0.0);
+		hit_record lr;
+		if (world->hit(probe, interval(1e-6, 1e-2), lr) && lr.mat_ptr) {
+			color e = lr.mat_ptr->emitted(probe, lr, lr.u, lr.v, lr.p);
+			if (e.length_squared() > 0.0) { Le_light = e; light_n = nn; }
+		}
+	}
 
 	color photon_flux = Le_light * light_area / (double)photons_per_iter;
 
-	std::cerr << "[PPM] photon_flux=(" << photon_flux.x() << ","
+	std::cerr << "[PPM] light area=" << light_area
+			  << " Le=(" << Le_light.x() << "," << Le_light.y() << ","
+			  << Le_light.z() << ") flux=(" << photon_flux.x() << ","
 			  << photon_flux.y() << "," << photon_flux.z() << ")\n";
 
 	for (int iter = 0; iter < n_iterations; ++iter) {
@@ -127,9 +150,9 @@ void PPMRenderer::render(
 		// writes are phi/M (atomic below). random_double() is thread_local.
 #pragma omp parallel for schedule(dynamic,1024)
 		for (int pi=0;pi<photons_per_iter;++pi){
-			double lx=lx0+random_double()*(lx1-lx0);
-			double lz=lz0+random_double()*(lz1-lz0);
-			point3 lpos(lx,ly,lz);
+			vec3   ng_unused;
+			point3 lpos = light_obj->sample_area(random_double(),
+												 random_double(), ng_unused);
 
 			onb uvw; uvw.build_from_w(light_n);
 			vec3 emit=uvw.local(random_cosine_direction());
@@ -186,8 +209,8 @@ void PPMRenderer::render(
 				double surv=std::clamp(flux.max_component(),0.05,0.95);
 				if (random_double()>surv) break;
 				flux=flux/surv;
-				flux = bs.is_delta
-					 ? flux*bs.f
+				flux = bs.is_delta ? flux*bs.f
+					 : bs.is_phase ? flux*bs.f/bs.pdf
 					 : flux*bs.f*std::abs(dot(rec.normal,bs.wi))/bs.pdf;
 				cur=ray(rec.p,bs.wi,0.0);
 			}
@@ -237,12 +260,3 @@ void PPMRenderer::render(
 		fb.set(i,j,L);
 	}
 }
-
-void PPMRenderer::camera_pass(const ray&,const color&,
-	const std::shared_ptr<hittable>&,const std::shared_ptr<hittable_list>&,
-	const std::shared_ptr<env_light>&,const color&,int,int,VisiblePoint&){}
-void PPMRenderer::photon_pass(const std::shared_ptr<hittable_list>&,
-	const std::shared_ptr<hittable>&,std::vector<VisiblePoint>&,
-	PhotonHashGrid&,long long&){}
-void PPMRenderer::accumulate_photon(const Photon&,std::vector<VisiblePoint>&,
-	const PhotonHashGrid&){}

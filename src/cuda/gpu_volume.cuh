@@ -29,7 +29,7 @@ __device__ inline vec3 hg_sample(const vec3& wo, float g, curandState* rng) {
 	float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta*cos_theta));
 	float phi       = 2.0f * (float)GPU_PI * (float)rand_double(rng);
 
-	vec3 w = -unit_vector(wo);
+	vec3 w = unit_vector(wo);
 	vec3 a = (fabsf(w.x()) > 0.9f) ? vec3(0,1,0) : vec3(1,0,0);
 	vec3 v = unit_vector(cross(w, a));
 	vec3 u = cross(w, v);
@@ -47,6 +47,37 @@ __device__ inline vec3 transmittance(const GpuMedium& med, double d) {
 		exp(-med.sigma_t.y() * d),
 		exp(-med.sigma_t.z() * d)
 	);
+}
+
+// Overlap of [0, t_max] along r with the medium box, as [t0, t1].
+__device__ inline bool medium_span(const GpuMedium& med, const ray& r,
+									double t_max, double& t0, double& t1) {
+	t0 = 0.0; t1 = t_max;
+	for (int a = 0; a < 3; ++a) {
+		double d = r.direction()[a];
+		double lo = med.bmin[a], hi = med.bmax[a];
+		if (fabs(d) < 1e-12) {
+			if (r.origin()[a] < lo || r.origin()[a] > hi) return false;
+			continue;
+		}
+		double inv = 1.0 / d;
+		double ta = (lo - r.origin()[a]) * inv;
+		double tb = (hi - r.origin()[a]) * inv;
+		if (ta > tb) { double s = ta; ta = tb; tb = s; }
+		t0 = fmax(t0, ta);
+		t1 = fmin(t1, tb);
+		if (t1 <= t0) return false;
+	}
+	return true;
+}
+
+// Transmittance along the part of the segment actually inside the medium.
+__device__ inline vec3 transmittance_seg(const GpuMedium& med, const ray& r,
+										  double t_max) {
+	if (!med.active) return vec3(1,1,1);
+	double t0, t1;
+	if (!medium_span(med, r, t_max, t0, t1)) return vec3(1,1,1);
+	return transmittance(med, (t1 - t0) * r.direction().length());
 }
 
 __device__ inline double sample_free_flight(const GpuMedium& med,
@@ -79,25 +110,28 @@ __device__ inline MediumSample sample_medium(
 
 	if (!med.active) return ms;
 
-	double t_free = sample_free_flight(med, rng);
+	double t0, t1;
+	if (!medium_span(med, r, t_surface, t0, t1)) return ms;
 
-	if (t_free < t_surface) {
+	// Camera rays are not unit length, so ray parameters are not world
+	// distances; free flight is sampled in distance and converted here.
+	double len    = r.direction().length();
+	if (len < 1e-12) return ms;
+	double t_free = t0 + sample_free_flight(med, rng) / len;
+
+	if (t_free < t1) {
 		ms.scattered = true;
 		ms.t_scatter = t_free;
 		ms.pos       = r.at(t_free);
 		ms.wi        = hg_sample(r.direction(), med.g, rng);
 
-		vec3 tr = transmittance(med, t_free);
-		float sigma_t_avg = (float)(
-			med.sigma_t.x() + med.sigma_t.y() + med.sigma_t.z()) / 3.0f;
-		vec3 sigma_s = med.sigma_s;
-		ms.weight = vec3(
-			sigma_s.x() * (float)tr.x() / (sigma_t_avg + 1e-7f),
-			sigma_s.y() * (float)tr.y() / (sigma_t_avg + 1e-7f),
-			sigma_s.z() * (float)tr.z() / (sigma_t_avg + 1e-7f)
-		);
+		// sample_free_flight never scatters at sigma_t ~ 0, so no guard here:
+		// an epsilon in the denominator would bias the albedo.
+		double sigma_t_avg =
+			(med.sigma_t.x() + med.sigma_t.y() + med.sigma_t.z()) / 3.0;
+		ms.weight = med.sigma_s / sigma_t_avg;
 	} else {
-		ms.weight = transmittance(med, t_surface);
+		ms.weight = vec3(1,1,1);
 	}
 
 	return ms;

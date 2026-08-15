@@ -236,6 +236,13 @@ private:
 		return finalise(mats, hits, lids, name);
 	}
 
+	static int add_rough_dielectric(std::vector<GpuMaterial>& m, vec3 tint,
+									 float roughness, float ir) {
+		GpuMaterial g{}; g.type = MatType::ROUGH_DIELECTRIC;
+		g.albedo = tint; g.roughness = roughness; g.ir = ir;
+		m.push_back(g); return (int)m.size() - 1;
+	}
+
 	static GpuScene build_glass(const std::string& name) {
 		std::vector<GpuMaterial> mats;
 		std::vector<GpuHittable> hits;
@@ -252,9 +259,11 @@ private:
 		add_xz_rect(hits, -10, 10, -6, 6, -1.1f, floor_id, false);
 		add_sphere(hits, vec3(0, 3, -5), 4.0f, backdrop_id);
 
-		float ior_steps[] = { 1.2f, 1.35f, 1.5f, 1.65f, 1.8f };
+		// Matches build_rough_glass_scene: varying roughness at a fixed IOR.
+		float roughness_steps[] = { 0.001f, 0.05f, 0.1f, 0.2f, 0.3f };
 		for (int i = 0; i < 5; ++i) {
-			int glass_id = add_dielectric(mats, ior_steps[i]);
+			int glass_id = add_rough_dielectric(mats, vec3(1,1,1),
+												roughness_steps[i], 1.5f);
 			float x = (i - 2) * 2.8f;
 			add_sphere(hits, vec3(x, 0.0f, 0), 1.0f, glass_id);
 		}
@@ -323,6 +332,8 @@ private:
 		scene.medium.sigma_s = vec3(sigma_s_v, sigma_s_v, sigma_s_v);
 		scene.medium.sigma_a = vec3(sigma_a_v, sigma_a_v, sigma_a_v);
 		scene.medium.sigma_t = scene.medium.sigma_s + scene.medium.sigma_a;
+		scene.medium.bmin    = vec3(0,0,0);
+		scene.medium.bmax    = vec3(555,555,555);
 		scene.medium.g       = 0.2f;
 		scene.medium.active  = true;
 

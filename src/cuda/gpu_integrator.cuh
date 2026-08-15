@@ -10,6 +10,7 @@
 #include "cuda/gpu_triangle.h"
 #include "cuda/cuda_rand.cuh"
 #include "cuda/gpu_camera.cuh"
+#include "cuda/gpu_volume.cuh"
 #include "cuda/gpu_bdpt.cuh"
 
 #define RAY_OFFSET 0.02
@@ -66,7 +67,8 @@ __device__ vec3 gpu_Li(
 	const GpuTriBVHNode* tri_bvh  = nullptr,
 	int                  tri_root = 0,
 	int                  n_tris   = 0,
-	const GpuEnvMap*     env_map  = nullptr
+	const GpuEnvMap*     env_map  = nullptr,
+	GpuMedium            medium   = GpuMedium{}
 ) {
 	ray   r    = initial_ray;
 	vec3  L    (0,0,0);
@@ -77,8 +79,59 @@ __device__ vec3 gpu_Li(
 
 	for (int depth = 0; depth < max_depth; ++depth) {
 		GpuHitRecord rec;
-		if (!hit_scene(hittables, n_hittables, r, interval(RAY_OFFSET, 1e30), rec,
-					   MESH_ARGS)) {
+		bool hit = hit_scene(hittables, n_hittables, r,
+							 interval(RAY_OFFSET, 1e30), rec, MESH_ARGS);
+
+		if (medium.active) {
+			MediumSample ms = sample_medium(medium, r, hit ? rec.t : 1e30, rng);
+			beta = beta * ms.weight;
+			if (!(beta.length_squared() > 0.0)) break;
+
+			if (ms.scattered) {
+				vec3 fwd = unit_vector(r.direction());
+				if (n_lights > 0) {
+					vec3   to_l = gpu_light_random(hittables, light_ids,
+													n_lights, ms.pos, rng);
+					double dl   = to_l.length();
+					if (dl > 1e-6) {
+						vec3   wl   = to_l / dl;
+						double lpdf = gpu_light_pdf(hittables, light_ids,
+													 n_lights, ms.pos, wl);
+						if (lpdf > 0.0) {
+							GpuHitRecord sr;
+							if (!hit_scene(hittables, n_hittables,
+										   ray(ms.pos, wl, 0.0),
+										   interval(RAY_OFFSET, dl - RAY_OFFSET),
+										   sr, MESH_ARGS)) {
+								GpuHitRecord lr;
+								if (hit_scene(hittables, n_hittables,
+											  ray(ms.pos, wl, 0.0),
+											  interval(RAY_OFFSET, 1e30), lr,
+											  MESH_ARGS)) {
+									vec3 lLe = gpu_emitted(materials[lr.mat_id],
+														   lr.front_face);
+									if (lLe.length_squared() > 0.0) {
+										double ph = hg_phase((float)dot(fwd, wl),
+															 medium.g);
+										vec3 tr = transmittance_seg(medium,
+											ray(ms.pos, wl, 0.0), dl);
+										double wt = gpu_power_heuristic(lpdf, ph);
+										L = L + beta * lLe * tr * (ph * wt / lpdf);
+									}
+								}
+							}
+						}
+					}
+				}
+				specular_bounce = false;
+				last_bsdf_pdf   = hg_phase((float)dot(fwd, ms.wi), medium.g);
+				prev_p = ms.pos;
+				r = ray(ms.pos, ms.wi, r.time());
+				continue;
+			}
+		}
+
+		if (!hit) {
 			vec3 Le = (env_map && env_map->valid)
 					  ? gpu_env_Le(*env_map, r.direction())
 					  : background;
@@ -140,7 +193,10 @@ __device__ vec3 gpu_Li(
 							double bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
 							double weight   = gpu_power_heuristic(light_pdf, bsdf_pdf);
 							double cos_t    = fabs(dot(rec.normal, wi));
-							L = L + beta * f * Le * (cos_t * weight / light_pdf);
+							// Shadow rays cross the medium too.
+							vec3   tr       = transmittance_seg(
+								medium, ray(rec.p, wi, r.time()), distance);
+							L = L + beta * f * Le * tr * (cos_t * weight / light_pdf);
 						}
 					}
 				}
@@ -208,7 +264,8 @@ __global__ void accumulate_kernel(
 	const GpuTriBVHNode* tri_bvh,
 	int                  tri_root,
 	int                  n_tris,
-	const GpuEnvMap*     env_map
+	const GpuEnvMap*     env_map,
+	GpuMedium            medium
 ) {
 	int x = blockIdx.x * blockDim.x + threadIdx.x;
 	int y = blockIdx.y * blockDim.y + threadIdx.y;
@@ -226,7 +283,7 @@ __global__ void accumulate_kernel(
 								   hittables, n_hittables, materials,
 								   light_ids, n_lights, max_depth, &rng,
 								   tris, tri_bvh, tri_root, n_tris,
-								   env_map);
+								   env_map, medium);
 	}
 	d_accum[id*3+0] += (float)pixel.x();
 	d_accum[id*3+1] += (float)pixel.y();

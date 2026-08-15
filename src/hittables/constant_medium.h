@@ -15,17 +15,19 @@ public:
 
 	constant_medium(std::shared_ptr<hittable> b,
 					double density,
-					std::shared_ptr<texture> tex)
+					std::shared_ptr<texture> tex,
+					double g = 0.0)
 		: boundary(b),
 		  neg_inv_density(-1.0 / density),
-		  phase_function(std::make_shared<isotropic>(tex)) {}
+		  phase_function(std::make_shared<isotropic>(tex, g)) {}
 
 	constant_medium(std::shared_ptr<hittable> b,
 					double density,
-					const color& c)
+					const color& c,
+					double g = 0.0)
 		: boundary(b),
 		  neg_inv_density(-1.0 / density),
-		  phase_function(std::make_shared<isotropic>(c)) {}
+		  phase_function(std::make_shared<isotropic>(c, g)) {}
 
 	virtual bool hit(const ray& r,
 					 const interval& ray_t,

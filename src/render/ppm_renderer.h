@@ -31,29 +31,4 @@ public:
 		const color& background
 	);
 
-private:
-	void camera_pass(
-		const ray& r,
-		const color& beta,
-		const std::shared_ptr<hittable>& world,
-		const std::shared_ptr<hittable_list>& lights,
-		const std::shared_ptr<env_light>& env,
-		const color& background,
-		int px, int py,
-		VisiblePoint& vp
-	);
-
-	void photon_pass(
-		const std::shared_ptr<hittable_list>& lights,
-		const std::shared_ptr<hittable>& world,
-		std::vector<VisiblePoint>& vps,
-		PhotonHashGrid& grid,
-		long long& total_photons
-	);
-
-	void accumulate_photon(
-		const Photon& photon,
-		std::vector<VisiblePoint>& vps,
-		const PhotonHashGrid& grid
-	);
 };

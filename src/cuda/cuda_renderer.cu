@@ -200,7 +200,7 @@ void cuda_render(const Scene& scene,
 				d_states,
 				gpu_scene.d_triangles, gpu_scene.d_tri_bvh,
 				gpu_scene.tri_bvh_root, gpu_scene.n_triangles,
-				d_env_map);
+				d_env_map, gpu_scene.medium);
 			cudaStreamSynchronize(stream);
 
 			if (preview && (s % 4 == 0 || s == spp-1)) {
