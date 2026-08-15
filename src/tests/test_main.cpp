@@ -1,6 +1,7 @@
 // Analytic BSDF checks — closed-form expectations, no reference render.
 // Run: ./build/tests   (exit 0 = passed)
 
+#include "tests/test_util.h"
 #include "materials/material.h"
 #include "core/onb.h"
 #include "core/random.h"
@@ -11,13 +12,13 @@
 #include <memory>
 #include <cmath>
 
-static int checks = 0, failures = 0;
+int g_checks = 0, g_failures = 0;
 
-static void check(bool ok, const std::string& what, double got, double want,
-				  double tol) {
-	++checks;
+void check(bool ok, const std::string& what, double got, double want,
+		   double tol) {
+	++g_checks;
 	if (ok) return;
-	++failures;
+	++g_failures;
 	std::printf("  FAIL  %-52s got %.6f want %.6f (tol %.4f)\n",
 				what.c_str(), got, want, tol);
 }
@@ -174,6 +175,14 @@ int main() {
 		  std::make_shared<ggx>(color(0.9,0.9,0.9), 0.05, 1.0), -1.0, 0.0, true },
 		{ "subsurface(0.9, mfp 0.1)",
 		  std::make_shared<subsurface>(color(0.9,0.9,0.9), 0.1, 1.4), -1.0, 0.0, false },
+		// isotropic is a phase function: spherical and with no cosine, so the
+		// albedo-reflectance check does not apply, only the <= 1 bound.
+		{ "isotropic(0.8)",
+		  std::make_shared<isotropic>(color(0.8,0.8,0.8)), -1.0, 0.0, true },
+		{ "rough_dielectric(rough 0.3, ior 1.5)",
+		  std::make_shared<rough_dielectric>(color(1,1,1), 0.3, 1.5), -1.0, 0.0, false },
+		{ "rough_dielectric(rough 0.6, ior 1.5)",
+		  std::make_shared<rough_dielectric>(color(1,1,1), 0.6, 1.5), -1.0, 0.0, false },
 	};
 
 	for (const auto& c : cases) {
@@ -183,6 +192,8 @@ int main() {
 		if (c.reciprocal) test_reciprocity(c.name, c.mat, n);
 	}
 
-	std::printf("%d checks, %d failed\n", checks, failures);
-	return failures == 0 ? 0 : 1;
+	run_gpu_tests();
+
+	std::printf("%d checks, %d failed\n", g_checks, g_failures);
+	return g_failures == 0 ? 0 : 1;
 }

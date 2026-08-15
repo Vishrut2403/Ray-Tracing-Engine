@@ -340,6 +340,22 @@ public:
 	virtual double pdf(const ray&, const vec3&, const hit_record&) const override {
 		return 1.0 / (4.0 * pi);
 	}
+
+	// Phase function: spherical, independent of both directions.
+	virtual color f_dir(const vec3&, const vec3&,
+						const hit_record& rec) const override {
+		return albedo->value(rec.u, rec.v, rec.p) / (4.0 * pi);
+	}
+	virtual double pdf_dir(const vec3&, const vec3&,
+						   const hit_record&) const override {
+		return 1.0 / (4.0 * pi);
+	}
+	virtual BSDFSample sample_dir(const vec3&,
+								  const hit_record& rec) const override {
+		vec3 wi = random_unit_vector();
+		return { wi, albedo->value(rec.u, rec.v, rec.p) / (4.0*pi),
+				 1.0/(4.0*pi), false };
+	}
 };
 
 // Subsurface scattering — Jensen dipole as a diffusion BRDF.
@@ -438,80 +454,127 @@ public:
 		  ior(ior) {}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
-		double alpha  = roughness * roughness;
-		double eta    = rec.front_face ? (1.0 / ior) : ior;
-		vec3   v      = -unit_vector(wo.direction());
-
-		onb uvw; uvw.build_from_w(rec.normal);
-
-		vec3 v_l = vec3(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
-
-		vec3 h_l = sample_vndf(v_l, alpha);
-		vec3 h   = unit_vector(uvw.local(h_l));
-
-		if (dot(h, v) < 0.0) h = -h;
-
-		double vdoth   = clamp(dot(v, h), 0.0, 1.0);
-		double F_val   = schlick(vdoth, eta);
-
-		if (random_double() < F_val) {
-			vec3 wi = unit_vector(reflect(-v, h));
-			if (dot(wi, rec.normal) <= 0.0)
-				return { wi, color(0,0,0), 0.0, false };
-
-			double p = F_val * vndf_pdf(v_l, h_l, alpha);
-			if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
-
-			double ndotv = std::max(dot(rec.normal, v),  1e-7);
-			double ndotl = std::max(dot(rec.normal, wi), 1e-7);
-			double ndoth = std::max(dot(rec.normal, h),  1e-7);
-			double Dval  = D(ndoth, alpha);
-			double Gval  = G2(ndotv, ndotl, alpha);
-			color  f_val = color(F_val,F_val,F_val) * (Dval * Gval / (4.0*ndotv*ndotl));
-
-			return { wi, f_val * ndotl / p, p, false };
-
-		} else {
-			vec3 wi_try;
-			bool tir = !refract_microfacet(-v, h, eta, wi_try);
-			if (tir) {
-				vec3 wi = unit_vector(reflect(-v, h));
-				return { wi, color(F_val,F_val,F_val), 1.0, true };
-			}
-			vec3 wi = unit_vector(wi_try);
-
-			if (dot(wi, rec.normal) >= 0.0)
-				return { wi, color(0,0,0), 0.0, false };
-
-			double p = (1.0 - F_val) * vndf_pdf_transmission(v_l, h_l, wi, h, eta, alpha);
-			if (p <= 0.0) return { wi, color(0,0,0), 0.0, false };
-
-			double ndotv  = std::max( dot(rec.normal, v),   1e-7);
-			double ndotl  = std::max(-dot(rec.normal, wi),  1e-7);
-			double ndoth  = std::max( dot(rec.normal, h),   1e-7);
-			double idoth  = std::max(-dot(wi, h),           1e-7);
-			double Dval   = D(ndoth, alpha);
-			double Gval   = G2(ndotv, ndotl, alpha);
-
-			double denom  = (vdoth + eta * idoth);
-			double f_val  = (1.0 - F_val) * Dval * Gval * vdoth * idoth
-							/ (ndotv * denom * denom);
-
-			return { wi, tint * f_val * ndotl / p, p, false };
-		}
+		return sample_dir(-unit_vector(wo.direction()), rec);
 	}
 
 	virtual color f(const ray& wo, const vec3& wi,
 					const hit_record& rec) const override {
-		return color(0,0,0);
+		return f_dir(-unit_vector(wo.direction()), wi, rec);
 	}
 
 	virtual double pdf(const ray& wo, const vec3& wi,
 					   const hit_record& rec) const override {
-		return 0.0;
+		return pdf_dir(-unit_vector(wo.direction()), wi, rec);
+	}
+
+	virtual color f_dir(const vec3& wo, const vec3& wi,
+						const hit_record& rec) const override {
+		color f; double p;
+		return eval(wo, wi, rec, f, p) ? f : color(0,0,0);
+	}
+
+	virtual double pdf_dir(const vec3& wo, const vec3& wi,
+						   const hit_record& rec) const override {
+		color f; double p;
+		return eval(wo, wi, rec, f, p) ? p : 0.0;
+	}
+
+	virtual BSDFSample sample_dir(const vec3& v,
+								  const hit_record& rec) const override {
+		double alpha = roughness * roughness;
+		double eta   = rec.front_face ? (1.0 / ior) : ior;
+		const vec3& n = rec.normal;
+		if (dot(n, v) <= 0.0) return { vec3(0,0,0), color(0,0,0), 0.0, false };
+
+		onb uvw; uvw.build_from_w(n);
+		vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+		vec3 h_l = sample_vndf(v_l, alpha);
+		vec3 h   = unit_vector(uvw.local(h_l));
+		if (dot(h, v) < 0.0) h = -h;
+
+		double vdoth = clamp(dot(v, h), 0.0, 1.0);
+		double F_val = schlick(vdoth, eta);
+
+		vec3 wi;
+		bool want_reflect = random_double() < F_val;
+		if (!want_reflect) {
+			vec3 wi_try;
+			if (refract_microfacet(-v, h, eta, wi_try)) wi = unit_vector(wi_try);
+			else { want_reflect = true; }                      // total internal
+		}
+		if (want_reflect) wi = unit_vector(reflect(-v, h));
+
+		// Otherwise eval() classifies the sample into the other lobe and returns
+		// a density for a direction that lobe never generates.
+		if (want_reflect ? dot(wi, n) <= 0.0 : dot(wi, n) >= 0.0)
+			return { wi, color(0,0,0), 0.0, false };
+
+		// Plain BSDF + density, as every other material here: a pre-weighted
+		// value alongside the pdf makes the integrator apply f*cos/pdf twice.
+		color  f; double p;
+		if (!eval(v, wi, rec, f, p) || p <= 0.0)
+			return { wi, color(0,0,0), 0.0, false };
+		return { wi, f, p, false };
 	}
 
 private:
+	// Both lobes of the microfacet dielectric (Walter et al. 2007).
+	bool eval(const vec3& v, const vec3& wi, const hit_record& rec,
+			  color& f_out, double& pdf_out) const {
+		double alpha = roughness * roughness;
+		double eta   = rec.front_face ? (1.0 / ior) : ior;
+		const vec3& n = rec.normal;
+
+		double ndotv = dot(n, v);
+		double ndotl = dot(n, wi);
+		if (ndotv <= 1e-7) return false;
+
+		onb uvw; uvw.build_from_w(n);
+		vec3 v_l(dot(v, uvw.u()), dot(v, uvw.v()), dot(v, uvw.w()));
+
+		if (ndotl > 0.0) {                                  // reflection
+			vec3 h = unit_vector(v + wi);
+			if (dot(h, n) < 0.0) h = -h;
+			double vdoth = clamp(dot(v, h), 0.0, 1.0);
+			double ndoth = std::max(dot(n, h), 1e-7);
+			double F_val = schlick(vdoth, eta);
+			double Dval  = D(ndoth, alpha);
+			double Gval  = G2(ndotv, std::max(ndotl, 1e-7), alpha);
+
+			f_out = color(F_val,F_val,F_val)
+				  * (Dval * Gval / (4.0 * ndotv * std::max(ndotl, 1e-7)));
+			vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+			pdf_out = F_val * vndf_pdf(v_l, h_l, alpha);
+			return true;
+		}
+
+		// transmission: inverting refract_microfacet gives h ~ eta*v - wi.
+		vec3 h = eta * v - wi;
+		if (h.length_squared() < 1e-14) return false;
+		h = unit_vector(h);
+		if (dot(h, n) < 0.0) h = -h;
+
+		double vdoth = dot(v, h);
+		double idoth = -dot(wi, h);
+		if (vdoth <= 1e-7 || idoth <= 1e-7) return false;
+
+		double ndoth = std::max(dot(n, h), 1e-7);
+		double al    = std::max(-ndotl, 1e-7);
+		double F_val = schlick(clamp(vdoth, 0.0, 1.0), eta);
+		double Dval  = D(ndoth, alpha);
+		double Gval  = G2(ndotv, al, alpha);
+		double denom = eta * vdoth + idoth;
+		if (std::abs(denom) < 1e-9) return false;
+
+		f_out = tint * ((1.0 - F_val) * Dval * Gval * vdoth * idoth
+						/ (ndotv * al * denom * denom));
+
+		vec3 h_l(dot(h, uvw.u()), dot(h, uvw.v()), dot(h, uvw.w()));
+		pdf_out = (1.0 - F_val)
+				* vndf_pdf_transmission(v_l, h_l, wi, h, eta, alpha);
+		return true;
+	}
+
 	static double schlick(double cos_theta, double eta) {
 		double r0 = (1.0 - eta) / (1.0 + eta); r0 *= r0;
 		return r0 + (1.0 - r0) * std::pow(1.0 - cos_theta, 5.0);
@@ -570,11 +633,11 @@ private:
 										 double eta, double a) {
 		double vdoth = std::max(dot(vec3(v_l.x(),v_l.y(),v_l.z()), h_l), 1e-7);
 		double idoth = std::max(-dot(wi, h), 1e-7);
-		double denom = vdoth + eta * idoth;
-		double jacobian = eta*eta * idoth / (denom*denom);
+		double denom = eta * vdoth + idoth;
+		double jacobian = idoth / (denom*denom);
 		double ndoth = std::max(h_l.z(), 1e-7);
 		double ndov  = std::max(v_l.z(), 1e-7);
-		return D(ndoth, a) * G1(ndov, a) * vdoth / (4.0*ndov*vdoth) * jacobian;
+		return D(ndoth, a) * G1(ndov, a) * vdoth / ndov * jacobian;
 	}
 };
 

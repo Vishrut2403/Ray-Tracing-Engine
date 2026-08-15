@@ -3,7 +3,9 @@
 #include <curand_kernel.h>
 #include "core/vec3.h"
 
-__global__ void cuda_rand_init(curandState* states, unsigned long long seed, int n) {
+// static: a non-static __global__ defined in a header multiply-defines as
+// soon as a second .cu includes it.
+__global__ static void cuda_rand_init(curandState* states, unsigned long long seed, int n) {
 	int id = blockIdx.x * blockDim.x + threadIdx.x;
 	if (id >= n) return;
 	curand_init(seed, id, 0, &states[id]);
