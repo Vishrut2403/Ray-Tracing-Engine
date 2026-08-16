@@ -115,7 +115,7 @@ struct GpuMesh {
 inline GpuMesh upload_obj_mesh(
 	const std::string& path,
 	int mat_id,
-	double scale  = 1.0,
+	real scale  = 1.0,
 	vec3   offset = vec3(0,0,0)
 ) {
 	tinyobj::attrib_t                attrib;
@@ -154,7 +154,7 @@ inline GpuMesh upload_obj_mesh(
 		}
 	}
 	for (auto& n : smooth_normals) {
-		double len = n.length();
+		real len = n.length();
 		n = (len > 1e-8) ? n/len : vec3(0,1,0);
 	}
 

@@ -11,20 +11,20 @@ class constant_medium : public hittable {
 public:
 	std::shared_ptr<hittable> boundary;
 	std::shared_ptr<material> phase_function;
-	double neg_inv_density;
+	real neg_inv_density;
 
 	constant_medium(std::shared_ptr<hittable> b,
-					double density,
+					real density,
 					std::shared_ptr<texture> tex,
-					double g = 0.0)
+					real g = 0.0)
 		: boundary(b),
 		  neg_inv_density(-1.0 / density),
 		  phase_function(std::make_shared<isotropic>(tex, g)) {}
 
 	constant_medium(std::shared_ptr<hittable> b,
-					double density,
+					real density,
 					const color& c,
-					double g = 0.0)
+					real g = 0.0)
 		: boundary(b),
 		  neg_inv_density(-1.0 / density),
 		  phase_function(std::make_shared<isotropic>(c, g)) {}
@@ -45,8 +45,8 @@ public:
 						   rec2))
 			return false;
 
-		double t0 = rec1.t;
-		double t1 = rec2.t;
+		real t0 = rec1.t;
+		real t1 = rec2.t;
 
 		// Clamp to ray interval
 		if (t0 < ray_t.min) t0 = ray_t.min;
@@ -78,8 +78,8 @@ public:
 		return true;
 	}
 
-	virtual bool bounding_box(double time0,
-							  double time1,
+	virtual bool bounding_box(real time0,
+							  real time1,
 							  aabb& output_box) const override {
 		return boundary->bounding_box(time0, time1, output_box);
 	}

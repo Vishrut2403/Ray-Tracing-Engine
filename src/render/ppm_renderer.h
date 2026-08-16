@@ -10,14 +10,14 @@ public:
 	int    n_iterations;
 	int    photons_per_iter;
 	int    max_depth;  
-	double initial_radius;
-	double alpha;    
+	real initial_radius;
+	real alpha;    
 
 	PPMRenderer(int iterations    = 64,
 				int photons       = 100000,
 				int depth         = 10,
-				double radius     = 15.0,
-				double alpha_val  = 0.7)
+				real radius     = 15.0,
+				real alpha_val  = 0.7)
 		: n_iterations(iterations)
 		, photons_per_iter(photons)
 		, max_depth(depth)

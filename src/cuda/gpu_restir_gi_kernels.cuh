@@ -42,10 +42,10 @@ __global__ void restir_gi_initial_kernel(
 	gbuf_rec.normal     = gbuf.normal;
 	gbuf_rec.mat_id     = gbuf.mat_id;
 	gbuf_rec.front_face = true;
-	gbuf_rec.t          = (double)gbuf.depth;
+	gbuf_rec.t          = (real)gbuf.depth;
 
 	GpuBSDFSample bs = gpu_sample(mat,
-		ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, -gbuf.wo, 0.0),
+		ray(gbuf.pos - gbuf.wo*(real)RAY_OFFSET, -gbuf.wo, 0.0),
 		gbuf_rec, &rng);
 
 	if (bs.pdf <= 0.0) { rng_states[idx] = rng; return; }
@@ -66,16 +66,16 @@ __global__ void restir_gi_initial_kernel(
 		vec3 Le = gpu_emitted(materials[irec.mat_id], irec.front_face);
 		if (Le.length_squared() > 0.0) {
 			// ReSTIR DI already integrates the whole area-light term here, with
-			// no MIS partner, so counting this bounce too double-counts direct
+			// no MIS partner, so counting this bounce too real-counts direct
 			// lighting. With no area lights, DI contributes nothing — keep it.
 			if (n_lights == 0) L_o = Le;
 		} else if (n_lights > 0) {
 			vec3 to_l = gpu_light_random(hittables, light_ids,
 										  n_lights, irec.p, &rng);
-			double dl = to_l.length();
+			real dl = to_l.length();
 			if (dl > 1e-6) {
 				vec3   wl   = to_l / dl;
-				double lpdf = gpu_light_pdf(hittables, light_ids,
+				real lpdf = gpu_light_pdf(hittables, light_ids,
 											 n_lights, irec.p, wl);
 				if (lpdf > 0.0) {
 					GpuHitRecord sr;
@@ -94,7 +94,7 @@ __global__ void restir_gi_initial_kernel(
 							if (lLe.length_squared() > 0.0) {
 								vec3   f2  = gpu_f_dir(materials[irec.mat_id],
 													-bs.wi, wl, irec.normal);
-								double ct2 = fabs(dot(irec.normal, wl));
+								real ct2 = fabs(dot(irec.normal, wl));
 								L_o = f2 * lLe * (ct2 / lpdf);
 							}
 						}
@@ -168,17 +168,17 @@ __global__ void restir_gi_temporal_kernel(
 			
 			if (dist_prev > 1e-6f && dist_new > 1e-6f) {
 				// Compute reconnection jacobian
-				float cos_prev = fmaxf(1e-6f, 
+				float cos_prev = rmax(1e-6f, 
 					(float)fabs(dot(prev.y.n_s, d_prev / dist_prev)));
-				float cos_new = fmaxf(1e-6f, 
+				float cos_new = rmax(1e-6f, 
 					(float)fabs(dot(prev.y.n_s, d_new / dist_new)));
 				
 				float jacobian = (cos_new * dist_prev * dist_prev) 
 							   / (cos_prev * dist_new * dist_new + 1e-10f);
 				
 				// Clamp jacobian to detect extreme geometry changes (likely disocclusion)
-				jacobian = fminf(jacobian, 5.0f);
-				jacobian = fmaxf(jacobian, 0.2f);  // ← reject small jacobians (shift too extreme)
+				jacobian = rmin(jacobian, 5.0f);
+				jacobian = rmax(jacobian, 0.2f);  // ← reject small jacobians (shift too extreme)
 				
 				// If jacobian is too extreme, treat as disocclusion (random replay)
 				bool is_disoccluded = jacobian < 0.3f || jacobian > 3.0f;

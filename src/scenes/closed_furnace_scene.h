@@ -21,7 +21,7 @@ public:
 		: lambertian(albedo), Le(e) {}
 
 	virtual color emitted(const ray&, const hit_record&,
-						   double, double, const point3&) const override {
+						   real, real, const point3&) const override {
 		return Le;
 	}
 };
@@ -30,7 +30,7 @@ inline Scene build_closed_furnace_scene() {
 	Scene scene;
 	hittable_list world;
 
-	const double rho = 0.5, le = 0.5;   // => L = 1.0
+	const real rho = 0.5, le = 0.5;   // => L = 1.0
 	auto wall = std::make_shared<emissive_lambertian>(
 		color(rho, rho, rho), color(le, le, le));
 

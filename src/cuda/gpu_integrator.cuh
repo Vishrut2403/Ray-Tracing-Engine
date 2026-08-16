@@ -15,16 +15,16 @@
 
 #define RAY_OFFSET 0.02
 
-__device__ inline double gpu_power_heuristic(double a, double b) {
-	double a2 = a*a, b2 = b*b;
+__device__ inline real gpu_power_heuristic(real a, real b) {
+	real a2 = a*a, b2 = b*b;
 	return a2 / (a2 + b2 + 1e-12);
 }
 
-__device__ inline double gpu_light_pdf(const GpuHittable* hittables,
+__device__ inline real gpu_light_pdf(const GpuHittable* hittables,
 										const int* light_ids, int n_lights,
 										const vec3& origin, const vec3& dir) {
 	if (n_lights == 0) return 0.0;
-	double sum = 0.0, w = 1.0 / n_lights;
+	real sum = 0.0, w = 1.0 / n_lights;
 	for (int i = 0; i < n_lights; ++i) {
 		const GpuHittable& lh = hittables[light_ids[i]];
 		GpuHitRecord tmp;
@@ -32,9 +32,9 @@ __device__ inline double gpu_light_pdf(const GpuHittable* hittables,
 		ray local = (lh.has_rotation || lh.translate_offset.length_squared() > 0.0)
 					? apply_inverse_transform(test_ray, lh) : test_ray;
 		if (hit_xz_rect(lh, local, interval(RAY_OFFSET, 1e30), tmp)) {
-			double area  = (double)(lh.a1-lh.a0) * (double)(lh.b1-lh.b0);
-			double dist2 = tmp.t * tmp.t * dir.length_squared();
-			double cos_t = fabs(dot(tmp.normal, unit_vector(dir)));
+			real area  = (real)(lh.a1-lh.a0) * (real)(lh.b1-lh.b0);
+			real dist2 = tmp.t * tmp.t * dir.length_squared();
+			real cos_t = fabs(dot(tmp.normal, unit_vector(dir)));
 			if (cos_t > 1e-8) sum += w * dist2 / (cos_t * area);
 		}
 	}
@@ -47,9 +47,9 @@ __device__ inline vec3 gpu_light_random(const GpuHittable* hittables,
 	if (n_lights == 0) return vec3(1,0,0);
 	int idx = min((int)(rand_double(rng) * n_lights), n_lights-1);
 	const GpuHittable& lh = hittables[light_ids[idx]];
-	double rx = (double)lh.a0 + rand_double(rng) * (double)(lh.a1-lh.a0);
-	double rz = (double)lh.b0 + rand_double(rng) * (double)(lh.b1-lh.b0);
-	vec3 pt(rx, (double)lh.k, rz);
+	real rx = (real)lh.a0 + rand_double(rng) * (real)(lh.a1-lh.a0);
+	real rz = (real)lh.b0 + rand_double(rng) * (real)(lh.b1-lh.b0);
+	vec3 pt(rx, (real)lh.k, rz);
 	return pt + lh.translate_offset - origin;
 }
 
@@ -74,7 +74,7 @@ __device__ vec3 gpu_Li(
 	vec3  L    (0,0,0);
 	vec3  beta (1,1,1);
 	bool  specular_bounce = false;
-	double last_bsdf_pdf  = 0.0;
+	real last_bsdf_pdf  = 0.0;
 	vec3  prev_p          = initial_ray.origin();
 
 	for (int depth = 0; depth < max_depth; ++depth) {
@@ -92,10 +92,10 @@ __device__ vec3 gpu_Li(
 				if (n_lights > 0) {
 					vec3   to_l = gpu_light_random(hittables, light_ids,
 													n_lights, ms.pos, rng);
-					double dl   = to_l.length();
+					real dl   = to_l.length();
 					if (dl > 1e-6) {
 						vec3   wl   = to_l / dl;
-						double lpdf = gpu_light_pdf(hittables, light_ids,
+						real lpdf = gpu_light_pdf(hittables, light_ids,
 													 n_lights, ms.pos, wl);
 						if (lpdf > 0.0) {
 							GpuHitRecord sr;
@@ -111,11 +111,11 @@ __device__ vec3 gpu_Li(
 									vec3 lLe = gpu_emitted(materials[lr.mat_id],
 														   lr.front_face);
 									if (lLe.length_squared() > 0.0) {
-										double ph = hg_phase((float)dot(fwd, wl),
+										real ph = hg_phase((float)dot(fwd, wl),
 															 medium.g);
 										vec3 tr = transmittance_seg(medium,
 											ray(ms.pos, wl, 0.0), dl);
-										double wt = gpu_power_heuristic(lpdf, ph);
+										real wt = gpu_power_heuristic(lpdf, ph);
 										L = L + beta * lLe * tr * (ph * wt / lpdf);
 									}
 								}
@@ -141,8 +141,8 @@ __device__ vec3 gpu_Li(
 				L = L + beta * Le;
 			} else {
 				// rec is unwritten on a miss; use the previous vertex.
-				double lp = (env_map && env_map->valid)
-							? (double)gpu_env_pdf(*env_map, r.direction())
+				real lp = (env_map && env_map->valid)
+							? (real)gpu_env_pdf(*env_map, r.direction())
 							: gpu_light_pdf(hittables, light_ids, n_lights,
 											prev_p, r.direction());
 				L = L + beta * Le * gpu_power_heuristic(last_bsdf_pdf, lp);
@@ -159,7 +159,7 @@ __device__ vec3 gpu_Li(
 				// MIS partner is NEE's density at the PREVIOUS vertex. From rec.p
 				// (already on the light) it re-intersects nothing and returns 0,
 				// giving this hit full weight on top of NEE.
-				double lp = gpu_light_pdf(hittables, light_ids, n_lights,
+				real lp = gpu_light_pdf(hittables, light_ids, n_lights,
 										   prev_p, r.direction());
 				L = L + beta * emitted * gpu_power_heuristic(last_bsdf_pdf, lp);
 			}
@@ -168,9 +168,9 @@ __device__ vec3 gpu_Li(
 		if (!specular_bounce && n_lights > 0) {
 			vec3   to_light  = gpu_light_random(hittables, light_ids, n_lights,
 												 rec.p, rng);
-			double distance  = to_light.length();
+			real distance  = to_light.length();
 			vec3   wi        = to_light / distance;
-			double light_pdf = gpu_light_pdf(hittables, light_ids, n_lights,
+			real light_pdf = gpu_light_pdf(hittables, light_ids, n_lights,
 											  rec.p, wi);
 
 			if (light_pdf > 0.0) {
@@ -190,9 +190,9 @@ __device__ vec3 gpu_Li(
 						if (Le.length_squared() > 0.0) {
 							vec3   wo       = -unit_vector(r.direction());
 							vec3   f        = gpu_f_dir(mat, wo, wi, rec.normal);
-							double bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
-							double weight   = gpu_power_heuristic(light_pdf, bsdf_pdf);
-							double cos_t    = fabs(dot(rec.normal, wi));
+							real bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
+							real weight   = gpu_power_heuristic(light_pdf, bsdf_pdf);
+							real cos_t    = fabs(dot(rec.normal, wi));
 							// Shadow rays cross the medium too.
 							vec3   tr       = transmittance_seg(
 								medium, ray(rec.p, wi, r.time()), distance);
@@ -216,10 +216,10 @@ __device__ vec3 gpu_Li(
 					vec3   Le       = gpu_env_Le(*env_map, wi);
 					vec3   wo       = -unit_vector(r.direction());
 					vec3   f        = gpu_f_dir(mat, wo, wi, rec.normal);
-					double bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
-					double weight   = gpu_power_heuristic((double)env_pdf_val, bsdf_pdf);
-					double cos_t    = fabs(dot(rec.normal, wi));
-					L = L + beta * f * Le * (cos_t * weight / (double)env_pdf_val);
+					real bsdf_pdf = gpu_pdf_dir(mat, wo, wi, rec.normal);
+					real weight   = gpu_power_heuristic((real)env_pdf_val, bsdf_pdf);
+					real cos_t    = fabs(dot(rec.normal, wi));
+					L = L + beta * f * Le * (cos_t * weight / (real)env_pdf_val);
 				}
 			}
 		}
@@ -232,13 +232,13 @@ __device__ vec3 gpu_Li(
 			beta = beta * bs.f;
 			specular_bounce = true;
 		} else {
-			double cos_t = fabs(dot(rec.normal, bs.wi));
+			real cos_t = fabs(dot(rec.normal, bs.wi));
 			beta = beta * bs.f * (cos_t / bs.pdf);
 			specular_bounce = false;
 		}
 
 		if (depth >= 3) {
-			double survival = fmax(0.05, fmin(0.95, beta.max_component()));
+			real survival = rmax(0.05, rmin(0.95, beta.max_component()));
 			if (rand_double(rng) > survival) break;
 			beta = beta / survival;
 		}
@@ -276,8 +276,8 @@ __global__ void accumulate_kernel(
 
 	vec3 pixel(0,0,0);
 	for (int s = 0; s < batch_spp; ++s) {
-		double u = (x + rand_double(&rng)) / (width  - 1);
-		double v = (y + rand_double(&rng)) / (height - 1);
+		real u = (x + rand_double(&rng)) / (width  - 1);
+		real v = (y + rand_double(&rng)) / (height - 1);
 		ray r    = gpu_get_ray(cam, u, v, &rng);
 		pixel    = pixel + gpu_Li(r, background,
 								   hittables, n_hittables, materials,
@@ -293,7 +293,7 @@ __global__ void accumulate_kernel(
 
 // Firefly clamp, matching the ReSTIR shade kernel.
 __device__ inline vec3 bdpt_clamp(vec3 c) {
-	double lum = 0.2126*c.x() + 0.7152*c.y() + 0.0722*c.z();
+	real lum = 0.2126*c.x() + 0.7152*c.y() + 0.0722*c.z();
 	if (!isfinite(lum) || lum < 0.0) return vec3(0,0,0);
 	if (lum > 50.0) return c * (50.0 / lum);
 	return c;
@@ -340,8 +340,8 @@ __global__ void accumulate_bdpt_kernel(
 	int cam_max = min(max_depth + 2, MAX_BDPT_VERTS);
 	int lit_max = min(max_depth + 2, MAX_BDPT_VERTS);
 
-	double u = (x + rand_double(&rng)) / (width  - 1);
-	double v = (y + rand_double(&rng)) / (height - 1);
+	real u = (x + rand_double(&rng)) / (width  - 1);
+	real v = (y + rand_double(&rng)) / (height - 1);
 	ray    cam_ray = gpu_get_ray(cam, u, v, &rng);
 
 	int nt = gpu_generate_camera_subpath(sc, aux, cam, cam_ray, cam_max,
@@ -350,7 +350,7 @@ __global__ void accumulate_bdpt_kernel(
 
 	// One light subpath per thread (= per pixel); the splat spreads over the
 	// whole film, hence 1/(W*H).
-	double inv_light_paths = 1.0 / ((double)width * (double)height);
+	real inv_light_paths = 1.0 / ((real)width * (real)height);
 
 	vec3 L(0,0,0);
 
@@ -359,7 +359,7 @@ __global__ void accumulate_bdpt_kernel(
 			int depth = t + s - 2;
 			if ((s == 1 && t == 1) || depth < 0 || depth > max_depth) continue;
 
-			double rx = 0.0, ry = 0.0;
+			real rx = 0.0, ry = 0.0;
 			vec3 c = gpu_connect_bdpt(sc, aux, cam, camv, t, lightv, s,
 									  &rng, rx, ry);
 			if (!(c.length_squared() > 0.0)) continue;

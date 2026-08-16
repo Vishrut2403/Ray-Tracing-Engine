@@ -26,7 +26,7 @@ __device__ inline vec3 hg_sample(const vec3& wo, float g, curandState* rng) {
 		cos_theta = (1.0f + g*g - sqr*sqr) / (2.0f * g);
 	}
 
-	float sin_theta = sqrtf(fmaxf(0.0f, 1.0f - cos_theta*cos_theta));
+	float sin_theta = sqrtf(rmax(0.0f, 1.0f - cos_theta*cos_theta));
 	float phi       = 2.0f * (float)GPU_PI * (float)rand_double(rng);
 
 	vec3 w = unit_vector(wo);
@@ -41,7 +41,7 @@ __device__ inline vec3 hg_sample(const vec3& wo, float g, curandState* rng) {
 	);
 }
 
-__device__ inline vec3 transmittance(const GpuMedium& med, double d) {
+__device__ inline vec3 transmittance(const GpuMedium& med, real d) {
 	return vec3(
 		exp(-med.sigma_t.x() * d),
 		exp(-med.sigma_t.y() * d),
@@ -51,21 +51,21 @@ __device__ inline vec3 transmittance(const GpuMedium& med, double d) {
 
 // Overlap of [0, t_max] along r with the medium box, as [t0, t1].
 __device__ inline bool medium_span(const GpuMedium& med, const ray& r,
-									double t_max, double& t0, double& t1) {
+									real t_max, real& t0, real& t1) {
 	t0 = 0.0; t1 = t_max;
 	for (int a = 0; a < 3; ++a) {
-		double d = r.direction()[a];
-		double lo = med.bmin[a], hi = med.bmax[a];
+		real d = r.direction()[a];
+		real lo = med.bmin[a], hi = med.bmax[a];
 		if (fabs(d) < 1e-12) {
 			if (r.origin()[a] < lo || r.origin()[a] > hi) return false;
 			continue;
 		}
-		double inv = 1.0 / d;
-		double ta = (lo - r.origin()[a]) * inv;
-		double tb = (hi - r.origin()[a]) * inv;
-		if (ta > tb) { double s = ta; ta = tb; tb = s; }
-		t0 = fmax(t0, ta);
-		t1 = fmin(t1, tb);
+		real inv = 1.0 / d;
+		real ta = (lo - r.origin()[a]) * inv;
+		real tb = (hi - r.origin()[a]) * inv;
+		if (ta > tb) { real s = ta; ta = tb; tb = s; }
+		t0 = rmax(t0, ta);
+		t1 = rmin(t1, tb);
 		if (t1 <= t0) return false;
 	}
 	return true;
@@ -73,20 +73,20 @@ __device__ inline bool medium_span(const GpuMedium& med, const ray& r,
 
 // Transmittance along the part of the segment actually inside the medium.
 __device__ inline vec3 transmittance_seg(const GpuMedium& med, const ray& r,
-										  double t_max) {
+										  real t_max) {
 	if (!med.active) return vec3(1,1,1);
-	double t0, t1;
+	real t0, t1;
 	if (!medium_span(med, r, t_max, t0, t1)) return vec3(1,1,1);
 	return transmittance(med, (t1 - t0) * r.direction().length());
 }
 
-__device__ inline double sample_free_flight(const GpuMedium& med,
+__device__ inline real sample_free_flight(const GpuMedium& med,
 											 curandState* rng) {
 	float sigma_t_avg = (float)(
 		med.sigma_t.x() + med.sigma_t.y() + med.sigma_t.z()) / 3.0f;
 	if (sigma_t_avg < 1e-8f) return 1e30;
-	float xi = fmaxf((float)rand_double(rng), 1e-7f);
-	return (double)(-logf(xi) / sigma_t_avg);
+	float xi = rmax((float)rand_double(rng), 1e-7f);
+	return (real)(-logf(xi) / sigma_t_avg);
 }
 
 struct MediumSample {
@@ -94,13 +94,13 @@ struct MediumSample {
 	vec3  pos;
 	vec3  wi;
 	vec3  weight;
-	double t_scatter;
+	real t_scatter;
 };
 
 __device__ inline MediumSample sample_medium(
 	const GpuMedium& med,
 	const ray&       r,
-	double           t_surface,
+	real           t_surface,
 	curandState*     rng)
 {
 	MediumSample ms;
@@ -110,14 +110,14 @@ __device__ inline MediumSample sample_medium(
 
 	if (!med.active) return ms;
 
-	double t0, t1;
+	real t0, t1;
 	if (!medium_span(med, r, t_surface, t0, t1)) return ms;
 
 	// Camera rays are not unit length, so ray parameters are not world
 	// distances; free flight is sampled in distance and converted here.
-	double len    = r.direction().length();
+	real len    = r.direction().length();
 	if (len < 1e-12) return ms;
-	double t_free = t0 + sample_free_flight(med, rng) / len;
+	real t_free = t0 + sample_free_flight(med, rng) / len;
 
 	if (t_free < t1) {
 		ms.scattered = true;
@@ -127,7 +127,7 @@ __device__ inline MediumSample sample_medium(
 
 		// sample_free_flight never scatters at sigma_t ~ 0, so no guard here:
 		// an epsilon in the denominator would bias the albedo.
-		double sigma_t_avg =
+		real sigma_t_avg =
 			(med.sigma_t.x() + med.sigma_t.y() + med.sigma_t.z()) / 3.0;
 		ms.weight = med.sigma_s / sigma_t_avg;
 	} else {

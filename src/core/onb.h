@@ -14,7 +14,7 @@ public:
 	HD vec3 v() const { return axis[1]; }
 	HD vec3 w() const { return axis[2]; }
 
-	HD vec3 local(double a, double b, double c) const { return a*u()+b*v()+c*w(); }
+	HD vec3 local(real a, real b, real c) const { return a*u()+b*v()+c*w(); }
 	HD vec3 local(const vec3& a) const { return a.x()*u()+a.y()*v()+a.z()*w(); }
 
 	HD void build_from_w(const vec3& n) {

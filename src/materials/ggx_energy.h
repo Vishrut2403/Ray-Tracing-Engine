@@ -58,22 +58,22 @@ HD inline vec3 ggx_F_avg(const vec3& f0) {
 }
 
 // Kulla-Conty multiple-scattering lobe, without the trailing cosine.
-HD inline vec3 ggx_ms_brdf(const vec3& f0, double rough,
-						    double ndotv, double ndotl) {
-	double Ea = (double)ggx_E_avg_at((float)rough);
-	double om = 1.0 - Ea;
+HD inline vec3 ggx_ms_brdf(const vec3& f0, real rough,
+						    real ndotv, real ndotl) {
+	real Ea = (real)ggx_E_avg_at((float)rough);
+	real om = 1.0 - Ea;
 	if (om < 1e-4) return vec3(0,0,0);
 
-	double Ev = (double)ggx_E_at((float)ndotv, (float)rough);
-	double El = (double)ggx_E_at((float)ndotl, (float)rough);
+	real Ev = (real)ggx_E_at((float)ndotv, (float)rough);
+	real El = (real)ggx_E_at((float)ndotl, (float)rough);
 
 	vec3   Fa = ggx_F_avg(f0);
-	double scale = (1.0 - Ev) * (1.0 - El) / (GGX_E_PI * om);
+	real scale = (1.0 - Ev) * (1.0 - El) / (GGX_E_PI * om);
 
 	vec3 Fms;
 	for (int c = 0; c < 3; ++c) {
-		double fa = Fa[c];
-		double d  = 1.0 - fa * om;
+		real fa = Fa[c];
+		real d  = 1.0 - fa * om;
 		Fms[c] = d > 1e-9 ? fa * fa * Ea / d : 0.0;
 	}
 	return Fms * scale;

@@ -8,8 +8,8 @@
 struct GpuHitRecord {
 	vec3   p;
 	vec3   normal;
-	double t;
-	double u, v;
+	real t;
+	real u, v;
 	int    mat_id;
 	bool   front_face;
 };
@@ -58,30 +58,30 @@ __device__ inline void apply_forward_transform(GpuHitRecord& rec,
 __device__ inline bool hit_sphere(const GpuHittable& h, const ray& r,
 								   interval ray_t, GpuHitRecord& rec) {
 	vec3   oc   = r.origin() - h.center;
-	double a    = r.direction().length_squared();
-	double hb   = dot(oc, r.direction());
-	double c    = oc.length_squared() - (double)h.radius * h.radius;
-	double disc = hb*hb - a*c;
+	real a    = r.direction().length_squared();
+	real hb   = dot(oc, r.direction());
+	real c    = oc.length_squared() - (real)h.radius * h.radius;
+	real disc = hb*hb - a*c;
 	if (disc < 0.0) return false;
-	double sqrtd = sqrt(disc);
-	double root  = (-hb - sqrtd) / a;
+	real sqrtd = sqrt(disc);
+	real root  = (-hb - sqrtd) / a;
 	if (!ray_t.surrounds(root)) {
 		root = (-hb + sqrtd) / a;
 		if (!ray_t.surrounds(root)) return false;
 	}
 	rec.t = root;
 	rec.p = r.at(rec.t);
-	set_face_normal(rec, r, (rec.p - h.center) / (double)h.radius);
+	set_face_normal(rec, r, (rec.p - h.center) / (real)h.radius);
 	rec.mat_id = h.mat_id;
 	return true;
 }
 
 __device__ inline bool hit_xz_rect(const GpuHittable& h, const ray& r,
 									interval ray_t, GpuHitRecord& rec) {
-	double t = ((double)h.k - r.origin().y()) / r.direction().y();
+	real t = ((real)h.k - r.origin().y()) / r.direction().y();
 	if (!ray_t.surrounds(t)) return false;
-	double x = r.origin().x() + t * r.direction().x();
-	double z = r.origin().z() + t * r.direction().z();
+	real x = r.origin().x() + t * r.direction().x();
+	real z = r.origin().z() + t * r.direction().z();
 	if (x < h.a0 || x > h.a1 || z < h.b0 || z > h.b1) return false;
 	rec.t = t; rec.u = (x-h.a0)/(h.a1-h.a0); rec.v = (z-h.b0)/(h.b1-h.b0);
 	rec.p = r.at(t); rec.mat_id = h.mat_id;
@@ -92,10 +92,10 @@ __device__ inline bool hit_xz_rect(const GpuHittable& h, const ray& r,
 
 __device__ inline bool hit_xy_rect(const GpuHittable& h, const ray& r,
 									interval ray_t, GpuHitRecord& rec) {
-	double t = ((double)h.k - r.origin().z()) / r.direction().z();
+	real t = ((real)h.k - r.origin().z()) / r.direction().z();
 	if (!ray_t.surrounds(t)) return false;
-	double x = r.origin().x() + t * r.direction().x();
-	double y = r.origin().y() + t * r.direction().y();
+	real x = r.origin().x() + t * r.direction().x();
+	real y = r.origin().y() + t * r.direction().y();
 	if (x < h.a0 || x > h.a1 || y < h.b0 || y > h.b1) return false;
 	rec.t = t; rec.u = (x-h.a0)/(h.a1-h.a0); rec.v = (y-h.b0)/(h.b1-h.b0);
 	rec.p = r.at(t); rec.mat_id = h.mat_id;
@@ -106,10 +106,10 @@ __device__ inline bool hit_xy_rect(const GpuHittable& h, const ray& r,
 
 __device__ inline bool hit_yz_rect(const GpuHittable& h, const ray& r,
 									interval ray_t, GpuHitRecord& rec) {
-	double t = ((double)h.k - r.origin().x()) / r.direction().x();
+	real t = ((real)h.k - r.origin().x()) / r.direction().x();
 	if (!ray_t.surrounds(t)) return false;
-	double y = r.origin().y() + t * r.direction().y();
-	double z = r.origin().z() + t * r.direction().z();
+	real y = r.origin().y() + t * r.direction().y();
+	real z = r.origin().z() + t * r.direction().z();
 	if (y < h.a0 || y > h.a1 || z < h.b0 || z > h.b1) return false;
 	rec.t = t; rec.u = (y-h.a0)/(h.a1-h.a0); rec.v = (z-h.b0)/(h.b1-h.b0);
 	rec.p = r.at(t); rec.mat_id = h.mat_id;
@@ -120,26 +120,26 @@ __device__ inline bool hit_yz_rect(const GpuHittable& h, const ray& r,
 
 __device__ inline bool hit_triangle(const GpuTriangle& tri, const ray& r,
 									 interval ray_t, GpuHitRecord& rec) {
-	const double eps = 1e-8;
+	const real eps = 1e-8;
 	vec3 e1 = tri.v1 - tri.v0;
 	vec3 e2 = tri.v2 - tri.v0;
 	vec3 h  = cross(r.direction(), e2);
-	double a = dot(e1, h);
+	real a = dot(e1, h);
 	if (fabs(a) < eps) return false;
 
-	double f = 1.0 / a;
+	real f = 1.0 / a;
 	vec3   s = r.origin() - tri.v0;
-	double u = f * dot(s, h);
+	real u = f * dot(s, h);
 	if (u < 0.0 || u > 1.0) return false;
 
 	vec3   q = cross(s, e1);
-	double v = f * dot(r.direction(), q);
+	real v = f * dot(r.direction(), q);
 	if (v < 0.0 || u + v > 1.0) return false;
 
-	double t = f * dot(e2, q);
+	real t = f * dot(e2, q);
 	if (!ray_t.surrounds(t)) return false;
 
-	double w = 1.0 - u - v;
+	real w = 1.0 - u - v;
 	vec3 smooth_n = unit_vector(tri.n0*w + tri.n1*u + tri.n2*v);
 	if (dot(smooth_n, r.direction()) > 0.0) smooth_n = -smooth_n;
 	rec.t      = t;
@@ -159,8 +159,8 @@ __device__ inline bool hit_aabb(const float* mn, const float* mx,
 		float t0  = ((float)mn[i] - (float)r.origin()[i]) * inv;
 		float t1  = ((float)mx[i] - (float)r.origin()[i]) * inv;
 		if (inv < 0.0f) { float tmp=t0; t0=t1; t1=tmp; }
-		t_min = fmaxf(t_min, t0);
-		t_max = fminf(t_max, t1);
+		t_min = rmax(t_min, t0);
+		t_max = rmin(t_max, t1);
 		if (t_max <= t_min) return false;
 	}
 	return true;
@@ -177,7 +177,7 @@ __device__ inline bool hit_tri_bvh(
 	stack[stack_top++] = root;
 
 	bool hit_any = false;
-	double closest = ray_t.max;
+	real closest = ray_t.max;
 
 	while (stack_top > 0) {
 		int node_idx = stack[--stack_top];
@@ -222,7 +222,7 @@ __device__ inline bool hit_scene(
 ) {
 	GpuHitRecord tmp;
 	bool   hit_any = false;
-	double closest = ray_t.max;
+	real closest = ray_t.max;
 
 	for (int i = 0; i < n_hittables; ++i) {
 		const GpuHittable& h = hittables[i];

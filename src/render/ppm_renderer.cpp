@@ -12,7 +12,7 @@
 #include <cmath>
 #include <unordered_map>
 
-static constexpr double pi_val = 3.14159265358979323846;
+static constexpr real pi_val = 3.14159265358979323846;
 
 static color trace_camera_ray(
 	const ray& r,
@@ -68,7 +68,7 @@ void PPMRenderer::render(
 		color  direct{0,0,0};
 		long long N = 0;     
 		color  tau{0,0,0}; 
-		double R = 0;   
+		real R = 0;   
 	};
 
 	std::vector<PixelState> pixels(W*H);
@@ -90,7 +90,7 @@ void PPMRenderer::render(
 		return;
 	}
 
-	double light_area = light_obj->area();
+	real light_area = light_obj->area();
 	vec3   probe_ng;
 	point3 probe_p = light_obj->sample_area(0.5, 0.5, probe_ng);
 	vec3   light_n = probe_ng;
@@ -106,7 +106,7 @@ void PPMRenderer::render(
 	}
 
 	color photon_flux =
-		Le_light * light_area * pi_val / (double)photons_per_iter;
+		Le_light * light_area * pi_val / (real)photons_per_iter;
 
 	std::cerr << "[PPM] light area=" << light_area
 			  << " Le=(" << Le_light.x() << "," << Le_light.y() << ","
@@ -129,7 +129,7 @@ void PPMRenderer::render(
 			pixels[idx].direct = pixels[idx].direct + dir;
 		}
 
-		double cell = initial_radius;
+		real cell = initial_radius;
 		auto hash3 = [](int x,int y,int z) -> int64_t {
 			return (int64_t)x*73856093LL^(int64_t)y*19349663LL^(int64_t)z*83492791LL;
 		};
@@ -157,7 +157,7 @@ void PPMRenderer::render(
 
 			onb uvw; uvw.build_from_w(light_n);
 			vec3 emit=uvw.local(random_cosine_direction());
-			double ce=std::max(dot(light_n,emit),0.0);
+			real ce=std::max<real>(dot(light_n,emit),0.0);
 			if (ce<1e-6) continue;
 
 			color flux = photon_flux;
@@ -207,7 +207,7 @@ void PPMRenderer::render(
 					}
 				}
 
-				double surv=std::clamp(flux.max_component(),0.05,0.95);
+				real surv=std::clamp<real>(flux.max_component(),0.05,0.95);
 				if (random_double()>surv) break;
 				flux=flux/surv;
 				flux = bs.is_delta ? flux*bs.f
@@ -220,8 +220,8 @@ void PPMRenderer::render(
 		for (int idx=0;idx<W*H;++idx){
 			auto& px=pixels[idx];
 			if (!px.vp.valid||M[idx]==0) continue;
-			double Nn=px.N, Mn=M[idx];
-			double ratio=(Nn+alpha*Mn)/(Nn+Mn);
+			real Nn=px.N, Mn=M[idx];
+			real ratio=(Nn+alpha*Mn)/(Nn+Mn);
 			px.tau=(px.tau+phi[idx])*ratio;
 			px.R=px.R*std::sqrt(ratio);
 			px.N=(long long)(px.N+alpha*Mn);
@@ -235,7 +235,7 @@ void PPMRenderer::render(
 	for (int idx=0;idx<W*H&&dbg<3;++idx){
 		auto& px=pixels[idx];
 		if (px.N>0&&px.vp.valid){
-			double area=pi_val*px.R*px.R;
+			real area=pi_val*px.R*px.R;
 			color L=px.tau/area;
 			std::cerr<<"  dbg px "<<idx<<" N="<<px.N<<" R="<<px.R
 					 <<" tau=("<<px.tau.x()<<")"
@@ -251,11 +251,11 @@ void PPMRenderer::render(
 		int idx=j*W+i;
 		auto& px=pixels[idx];
 
-		color L=px.direct/(double)n_iterations;
+		color L=px.direct/(real)n_iterations;
 
 		if (px.vp.valid&&px.N>0){
-			double area=pi_val*px.R*px.R;
-			L=L+px.tau/(area*(double)n_iterations);
+			real area=pi_val*px.R*px.R;
+			L=L+px.tau/(area*(real)n_iterations);
 		}
 
 		fb.set(i,j,L);

@@ -294,7 +294,7 @@ void test_phase_flag() {
 		double r = 0.2126*bs.f.x() + 0.7152*bs.f.y() + 0.0722*bs.f.z();
 		worst = std::max(worst, std::abs(r / bs.pdf - 0.8));
 	}
-	check(worst < 1e-9, "isotropic: f/pdf = albedo", worst, 0.0, 1e-9);
+	check(worst < kExactTol, "isotropic: f/pdf = albedo", worst, 0.0, kExactTol);
 }
 
 } // namespace

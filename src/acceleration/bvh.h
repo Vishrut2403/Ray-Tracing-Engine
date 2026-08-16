@@ -16,8 +16,8 @@ public:
 		std::vector<std::shared_ptr<hittable>>& objects,
 		size_t start,
 		size_t end,
-		double time0,
-		double time1
+		real time0,
+		real time1
 	) {
 		int axis = random_int(0, 2);
 		auto comparator = (axis == 0) ? box_x_compare
@@ -85,8 +85,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 		output_box = box;

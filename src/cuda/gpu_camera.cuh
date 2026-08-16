@@ -6,10 +6,10 @@
 
 struct GpuCamera {
 	vec3   origin, lower_left, horizontal, vertical, u, v, w;
-	double lens_radius;
+	real lens_radius;
 };
 
-__device__ inline ray gpu_get_ray(const GpuCamera& cam, double s, double t,
+__device__ inline ray gpu_get_ray(const GpuCamera& cam, real s, real t,
 								   curandState* rng) {
 	vec3 rd     = cam.lens_radius * rand_in_unit_sphere(rng);
 	rd[2] = 0.0;
@@ -24,8 +24,8 @@ __device__ inline ray gpu_get_ray(const GpuCamera& cam, double s, double t,
 // per pixel and splats land in the accumulator's units. Aperture must be 0.
 struct GpuCamAux {
 	vec3   forward;         // unit vector along the view axis
-	double img_plane_dist;  // aperture → image plane, in pixel units
-	double mis_scale;       // 1/(W*H); see gpu_cam_pdf_dir_mis
+	real img_plane_dist;  // aperture → image plane, in pixel units
+	real mis_scale;       // 1/(W*H); see gpu_cam_pdf_dir_mis
 	int    W, H;
 };
 
@@ -33,18 +33,18 @@ __device__ inline GpuCamAux gpu_make_cam_aux(const GpuCamera& cam, int W, int H)
 	GpuCamAux a;
 	vec3   center = cam.lower_left + 0.5*cam.horizontal + 0.5*cam.vertical;
 	vec3   d      = center - cam.origin;
-	double focal  = d.length();
+	real focal  = d.length();
 	a.forward        = d / focal;
-	a.img_plane_dist = focal * (double)W / cam.horizontal.length();
-	a.mis_scale      = 1.0 / ((double)W * (double)H);
+	a.img_plane_dist = focal * (real)W / cam.horizontal.length();
+	a.mis_scale      = 1.0 / ((real)W * (real)H);
 	a.W = W;
 	a.H = H;
 	return a;
 }
 
 // Solid-angle density of the primary ray, one ray drawn per pixel.
-__device__ inline double gpu_cam_pdf_dir(const GpuCamAux& aux, const vec3& dir_unit) {
-	double cos_t = dot(aux.forward, dir_unit);
+__device__ inline real gpu_cam_pdf_dir(const GpuCamAux& aux, const vec3& dir_unit) {
+	real cos_t = dot(aux.forward, dir_unit);
 	if (cos_t <= 1e-9) return 0.0;
 	return (aux.img_plane_dist * aux.img_plane_dist) / (cos_t * cos_t * cos_t);
 }
@@ -52,7 +52,7 @@ __device__ inline double gpu_cam_pdf_dir(const GpuCamAux& aux, const vec3& dir_u
 // Same density per *image* rather than per pixel: one camera ray per pixel but
 // W*H light subpaths that may land anywhere, so the camera technique carries an
 // extra 1/(W*H). MIS weights use this; estimators use the unscaled form above.
-__device__ inline double gpu_cam_pdf_dir_mis(const GpuCamAux& aux,
+__device__ inline real gpu_cam_pdf_dir_mis(const GpuCamAux& aux,
 											  const vec3& dir_unit) {
 	return gpu_cam_pdf_dir(aux, dir_unit) * aux.mis_scale;
 }
@@ -62,23 +62,23 @@ __device__ inline double gpu_cam_pdf_dir_mis(const GpuCamAux& aux,
 __device__ inline bool gpu_project_to_pixel(const GpuCamera& cam,
 											 const GpuCamAux& aux,
 											 const vec3& p,
-											 double& raster_x, double& raster_y) {
+											 real& raster_x, real& raster_y) {
 	vec3 d = p - cam.origin;
 	if (dot(aux.forward, d) <= 1e-9) return false;
 
 	vec3   nrm   = cross(cam.horizontal, cam.vertical);
-	double denom = dot(d, nrm);
+	real denom = dot(d, nrm);
 	if (fabs(denom) < 1e-12) return false;
 
-	double lambda = dot(cam.lower_left - cam.origin, nrm) / denom;
+	real lambda = dot(cam.lower_left - cam.origin, nrm) / denom;
 	if (lambda <= 0.0) return false;
 
 	vec3   q = cam.origin + lambda*d - cam.lower_left;
-	double s = dot(q, cam.horizontal) / cam.horizontal.length_squared();
-	double t = dot(q, cam.vertical)   / cam.vertical.length_squared();
+	real s = dot(q, cam.horizontal) / cam.horizontal.length_squared();
+	real t = dot(q, cam.vertical)   / cam.vertical.length_squared();
 	if (s < 0.0 || s >= 1.0 || t < 0.0 || t >= 1.0) return false;
 
-	raster_x = s * (double)(aux.W - 1);
-	raster_y = t * (double)(aux.H - 1);
+	raster_x = s * (real)(aux.W - 1);
+	raster_y = t * (real)(aux.H - 1);
 	return true;
 }

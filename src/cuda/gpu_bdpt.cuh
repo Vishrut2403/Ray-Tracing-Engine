@@ -50,19 +50,19 @@ struct GpuPathVertex {
 	bool   is_emissive; // sits on an emissive surface
 	bool   is_light_ep; // is a light-subpath origin (emission, not a BSDF)
 	bool   is_camera;
-	double pdf_fwd;     // area density, sampled from the previous subpath vertex
-	double pdf_rev;     // area density, sampled from the next vertex, reversed
+	real pdf_fwd;     // area density, sampled from the previous subpath vertex
+	real pdf_rev;     // area density, sampled from the next vertex, reversed
 };
 
-__device__ inline double bdpt_remap0(double f) { return f != 0.0 ? f : 1.0; }
+__device__ inline real bdpt_remap0(real f) { return f != 0.0 ? f : 1.0; }
 
-__device__ inline double gpu_convert_density(double pdf, const vec3& from_p,
+__device__ inline real gpu_convert_density(real pdf, const vec3& from_p,
 											  const vec3& to_p, const vec3& to_n,
 											  bool to_on_surface) {
 	vec3   w  = to_p - from_p;
-	double d2 = w.length_squared();
+	real d2 = w.length_squared();
 	if (d2 <= 1e-12) return 0.0;
-	double inv = 1.0 / d2;
+	real inv = 1.0 / d2;
 	if (to_on_surface) pdf *= fabs(dot(to_n, w * sqrt(inv)));
 	return pdf * inv;
 }
@@ -70,7 +70,7 @@ __device__ inline double gpu_convert_density(double pdf, const vec3& from_p,
 __device__ inline bool gpu_bdpt_visible(const GpuBDPTScene& sc,
 										 const vec3& a, const vec3& b) {
 	vec3   d    = b - a;
-	double dist = d.length();
+	real dist = d.length();
 	if (dist < 1e-6) return true;
 	GpuHitRecord tmp;
 	return !hit_scene(sc.hittables, sc.n_hittables,
@@ -84,59 +84,59 @@ __device__ inline bool gpu_bdpt_visible(const GpuBDPTScene& sc,
 __device__ inline bool gpu_sample_light_point(const GpuBDPTScene& sc,
 											   curandState* rng,
 											   vec3& pos, vec3& nrm, vec3& Le,
-											   double& pdf_pos) {
+											   real& pdf_pos) {
 	if (sc.n_lights <= 0) return false;
 	int li = min((int)(rand_double(rng) * sc.n_lights), sc.n_lights - 1);
 	const GpuHittable& lh = sc.hittables[sc.light_ids[li]];
 
-	double rx = (double)lh.a0 + rand_double(rng) * (double)(lh.a1 - lh.a0);
-	double rz = (double)lh.b0 + rand_double(rng) * (double)(lh.b1 - lh.b0);
+	real rx = (real)lh.a0 + rand_double(rng) * (real)(lh.a1 - lh.a0);
+	real rz = (real)lh.b0 + rand_double(rng) * (real)(lh.b1 - lh.b0);
 
-	pos = vec3(rx, (double)lh.k, rz) + lh.translate_offset;
+	pos = vec3(rx, (real)lh.k, rz) + lh.translate_offset;
 	nrm = lh.flip_face ? vec3(0,-1,0) : vec3(0,1,0);
 	Le  = sc.materials[lh.mat_id].albedo;
 
-	double area = (double)(lh.a1 - lh.a0) * (double)(lh.b1 - lh.b0);
+	real area = (real)(lh.a1 - lh.a0) * (real)(lh.b1 - lh.b0);
 	if (area <= 0.0) return false;
-	pdf_pos = 1.0 / (area * (double)sc.n_lights);
+	pdf_pos = 1.0 / (area * (real)sc.n_lights);
 	return true;
 }
 
-__device__ inline double gpu_pdf_light_origin(const GpuBDPTScene& sc,
+__device__ inline real gpu_pdf_light_origin(const GpuBDPTScene& sc,
 											   const vec3& p) {
 	for (int i = 0; i < sc.n_lights; ++i) {
 		const GpuHittable& lh = sc.hittables[sc.light_ids[i]];
 		vec3 lp = p - lh.translate_offset;
-		if (fabs(lp.y() - (double)lh.k) < 1e-3 &&
-			lp.x() >= (double)lh.a0 - 1e-3 && lp.x() <= (double)lh.a1 + 1e-3 &&
-			lp.z() >= (double)lh.b0 - 1e-3 && lp.z() <= (double)lh.b1 + 1e-3) {
-			double area = (double)(lh.a1 - lh.a0) * (double)(lh.b1 - lh.b0);
+		if (fabs(lp.y() - (real)lh.k) < 1e-3 &&
+			lp.x() >= (real)lh.a0 - 1e-3 && lp.x() <= (real)lh.a1 + 1e-3 &&
+			lp.z() >= (real)lh.b0 - 1e-3 && lp.z() <= (real)lh.b1 + 1e-3) {
+			real area = (real)(lh.a1 - lh.a0) * (real)(lh.b1 - lh.b0);
 			if (area <= 0.0) return 0.0;
-			return 1.0 / (area * (double)sc.n_lights);
+			return 1.0 / (area * (real)sc.n_lights);
 		}
 	}
 	return 0.0;
 }
 
 // Area density at `next` of the emission leaving light vertex lv.
-__device__ inline double gpu_pdf_light_dir(const GpuPathVertex& lv,
+__device__ inline real gpu_pdf_light_dir(const GpuPathVertex& lv,
 											const GpuPathVertex& next) {
 	vec3   w  = next.p - lv.p;
-	double d2 = w.length_squared();
+	real d2 = w.length_squared();
 	if (d2 <= 1e-12) return 0.0;
-	double inv = 1.0 / d2;
+	real inv = 1.0 / d2;
 	w = w * sqrt(inv);
 
-	double cos_l = dot(lv.n, w);
+	real cos_l = dot(lv.n, w);
 	if (cos_l <= 0.0) return 0.0;
 
-	double pdf = (cos_l / GPU_PI) * inv;
+	real pdf = (cos_l / GPU_PI) * inv;
 	if (!next.is_camera) pdf *= fabs(dot(next.n, w));
 	return pdf;
 }
 
 // Area density at `next` of continuing from `cur`, entered from `prev`.
-__device__ inline double gpu_vertex_pdf(const GpuBDPTScene& sc,
+__device__ inline real gpu_vertex_pdf(const GpuBDPTScene& sc,
 										 const GpuCamAux& aux,
 										 const GpuPathVertex* prev,
 										 const GpuPathVertex& cur,
@@ -144,11 +144,11 @@ __device__ inline double gpu_vertex_pdf(const GpuBDPTScene& sc,
 	if (cur.is_light_ep) return gpu_pdf_light_dir(cur, next);
 
 	vec3   wn = next.p - cur.p;
-	double d2 = wn.length_squared();
+	real d2 = wn.length_squared();
 	if (d2 <= 1e-12) return 0.0;
 	wn = wn / sqrt(d2);
 
-	double pdf_dir = 0.0;
+	real pdf_dir = 0.0;
 	if (cur.is_camera) {
 		pdf_dir = gpu_cam_pdf_dir_mis(aux, wn);
 	} else {
@@ -164,10 +164,10 @@ __device__ inline double gpu_vertex_pdf(const GpuBDPTScene& sc,
 // ── Subpath construction ─────────────────────────────────────────────────────
 
 __device__ inline int gpu_random_walk(const GpuBDPTScene& sc,
-									   ray r, vec3 beta, double pdf_dir,
+									   ray r, vec3 beta, real pdf_dir,
 									   int max_verts, GpuPathVertex* path,
 									   int idx, curandState* rng) {
-	double pdf_fwd = pdf_dir, pdf_rev = 0.0;
+	real pdf_fwd = pdf_dir, pdf_rev = 0.0;
 
 	while (idx < max_verts) {
 		GpuHitRecord rec;
@@ -236,7 +236,7 @@ __device__ inline int gpu_generate_camera_subpath(const GpuBDPTScene& sc,
 	v0.pdf_rev     = 0.0;
 	if (max_verts == 1) return 1;
 
-	double pdf_dir = gpu_cam_pdf_dir_mis(aux, unit_vector(r.direction()));
+	real pdf_dir = gpu_cam_pdf_dir_mis(aux, unit_vector(r.direction()));
 	if (pdf_dir <= 0.0) return 1;
 
 	return gpu_random_walk(sc, r, vec3(1,1,1), pdf_dir, max_verts, path, 1, rng);
@@ -249,7 +249,7 @@ __device__ inline int gpu_generate_light_subpath(const GpuBDPTScene& sc,
 	if (max_verts <= 0) return 0;
 
 	vec3   lp, ln, Le;
-	double pdf_pos;
+	real pdf_pos;
 	if (!gpu_sample_light_point(sc, rng, lp, ln, Le, pdf_pos)) return 0;
 
 	GpuPathVertex& v0 = path[0];
@@ -269,10 +269,10 @@ __device__ inline int gpu_generate_light_subpath(const GpuBDPTScene& sc,
 	// Cosine-weighted about the side that radiates (ceiling lights face down).
 	onb uvw; uvw.build_from_w(ln);
 	vec3   dir   = unit_vector(uvw.local(rand_cosine_direction(rng)));
-	double cos_e = dot(ln, dir);
+	real cos_e = dot(ln, dir);
 	if (cos_e <= 1e-9) return 1;
 
-	double pdf_dir = cos_e / GPU_PI;
+	real pdf_dir = cos_e / GPU_PI;
 	vec3   beta    = Le * (cos_e / (pdf_pos * pdf_dir));
 
 	return gpu_random_walk(sc, ray(lp, dir, 0.0), beta, pdf_dir,
@@ -282,7 +282,7 @@ __device__ inline int gpu_generate_light_subpath(const GpuBDPTScene& sc,
 // Balance heuristic over every (s,t) split. The connection temporarily rewrites
 // densities at the joined vertices and their neighbours, saved/restored here.
 
-__device__ inline double gpu_mis_weight(const GpuBDPTScene& sc,
+__device__ inline real gpu_mis_weight(const GpuBDPTScene& sc,
 										 const GpuCamAux& aux,
 										 GpuPathVertex* camv, int t,
 										 GpuPathVertex* lightv, int s,
@@ -310,8 +310,8 @@ __device__ inline double gpu_mis_weight(const GpuBDPTScene& sc,
 	}
 
 	bool   save_pt_delta = false, save_qs_delta = false;
-	double save_pt_rev = 0.0, save_ptM_rev = 0.0;
-	double save_qs_rev = 0.0, save_qsM_rev = 0.0;
+	real save_pt_rev = 0.0, save_ptM_rev = 0.0;
+	real save_qs_rev = 0.0, save_qsM_rev = 0.0;
 
 	if (pt) { save_pt_delta = pt->delta; pt->delta = false; }
 	if (qs) { save_qs_delta = qs->delta; qs->delta = false; }
@@ -335,7 +335,7 @@ __device__ inline double gpu_mis_weight(const GpuBDPTScene& sc,
 		qsMinus->pdf_rev = gpu_vertex_pdf(sc, aux, pt, *qs, *qsMinus);
 	}
 
-	double sumRi = 0.0, ri = 1.0;
+	real sumRi = 0.0, ri = 1.0;
 	for (int i = t - 1; i > 0; --i) {
 		ri *= bdpt_remap0(camv[i].pdf_rev) / bdpt_remap0(camv[i].pdf_fwd);
 		if (!camv[i].delta && !camv[i-1].delta) sumRi += ri;
@@ -365,12 +365,12 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 										 GpuPathVertex* camv, int t,
 										 GpuPathVertex* lightv, int s,
 										 curandState* rng,
-										 double& raster_x, double& raster_y) {
+										 real& raster_x, real& raster_y) {
 	vec3          L(0,0,0);
 	GpuPathVertex sampled{};
 	bool          has_sampled = false;
 
-	// Would double-count the s == 0 strategy.
+	// Would real-count the s == 0 strategy.
 	if (t > 1 && s != 0 && camv[t-1].is_light_ep) return vec3(0,0,0);
 
 	if (s == 0) {
@@ -383,16 +383,16 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 		if (qs.delta || qs.is_light_ep) return vec3(0,0,0);
 
 		vec3   d     = cam.origin - qs.p;
-		double dist2 = d.length_squared();
+		real dist2 = d.length_squared();
 		if (dist2 < 1e-10) return vec3(0,0,0);
-		double dist = sqrt(dist2);
+		real dist = sqrt(dist2);
 		vec3   wi   = d / dist;
 
 		if (!gpu_project_to_pixel(cam, aux, qs.p, raster_x, raster_y))
 			return vec3(0,0,0);
 
 		// Camera's area density here, also the importance-to-area splat Jacobian.
-		double pdf_cam_A = gpu_cam_pdf_dir(aux, -wi)
+		real pdf_cam_A = gpu_cam_pdf_dir(aux, -wi)
 						 * fabs(dot(qs.n, wi)) / dist2;
 		if (pdf_cam_A <= 0.0) return vec3(0,0,0);
 
@@ -423,20 +423,20 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 		if (pt.delta) return vec3(0,0,0);
 
 		vec3   lp, ln, Le;
-		double pdf_pos;
+		real pdf_pos;
 		if (!gpu_sample_light_point(sc, rng, lp, ln, Le, pdf_pos))
 			return vec3(0,0,0);
 
 		vec3   d     = lp - pt.p;
-		double dist2 = d.length_squared();
+		real dist2 = d.length_squared();
 		if (dist2 < 1e-10) return vec3(0,0,0);
-		double dist = sqrt(dist2);
+		real dist = sqrt(dist2);
 		vec3   wi   = d / dist;
 
-		double cos_l = dot(ln, -wi);
+		real cos_l = dot(ln, -wi);
 		if (cos_l <= 1e-9) return vec3(0,0,0);
 
-		double pdf_solid = pdf_pos * dist2 / cos_l;
+		real pdf_solid = pdf_pos * dist2 / cos_l;
 		if (pdf_solid <= 0.0) return vec3(0,0,0);
 
 		vec3 wo = unit_vector(camv[t-2].p - pt.p);
@@ -466,9 +466,9 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 		if (qs.delta || pt.delta) return vec3(0,0,0);
 
 		vec3   d     = qs.p - pt.p;
-		double dist2 = d.length_squared();
+		real dist2 = d.length_squared();
 		if (dist2 < 1e-10) return vec3(0,0,0);
-		double dist = sqrt(dist2);
+		real dist = sqrt(dist2);
 		vec3   wi   = d / dist;
 
 		vec3 wo_pt = unit_vector(camv[t-2].p   - pt.p);
@@ -479,7 +479,7 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 		vec3 f_qs = gpu_f_dir(sc.materials[qs.mat_id], wo_qs, -wi, qs.n);
 		if (!(f_qs.length_squared() > 0.0)) return vec3(0,0,0);
 
-		double G = fabs(dot(pt.n, wi)) * fabs(dot(qs.n, -wi)) / dist2;
+		real G = fabs(dot(pt.n, wi)) * fabs(dot(qs.n, -wi)) / dist2;
 		if (G <= 0.0) return vec3(0,0,0);
 
 		if (!gpu_bdpt_visible(sc, pt.p, qs.p)) return vec3(0,0,0);
@@ -489,7 +489,7 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 
 	if (!(L.length_squared() > 0.0)) return vec3(0,0,0);
 
-	double w = gpu_mis_weight(sc, aux, camv, t, lightv, s, sampled, has_sampled);
+	real w = gpu_mis_weight(sc, aux, camv, t, lightv, s, sampled, has_sampled);
 	if (!(w > 0.0)) return vec3(0,0,0);
 
 	return L * w;

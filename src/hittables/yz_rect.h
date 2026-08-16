@@ -11,9 +11,9 @@ public:
 	yz_rect() {}
 
 	yz_rect(
-		double _y0, double _y1,
-		double _z0, double _z1,
-		double _k,
+		real _y0, real _y1,
+		real _z0, real _z1,
+		real _k,
 		std::shared_ptr<material> mat
 	)
 		: y0(_y0), y1(_y1),
@@ -58,8 +58,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 
@@ -71,7 +71,7 @@ public:
 		return true;
 	}
 
-	virtual double pdf_value(
+	virtual real pdf_value(
 		const point3& origin,
 		const vec3& direction
 	) const override {
@@ -84,15 +84,15 @@ public:
 				rec))
 			return 0.0;
 
-		double area = (y1 - y0) * (z1 - z0);
+		real area = (y1 - y0) * (z1 - z0);
 
-		double distance_squared =
+		real distance_squared =
 			rec.t * rec.t *
 			direction.length_squared();
 
 		vec3 unit_dir = unit_vector(direction);
 
-		double cosine =
+		real cosine =
 			fabs(dot(rec.normal, -unit_dir));
 
 		if (cosine < 1e-8)
@@ -114,8 +114,8 @@ public:
 		return random_point - origin;
 	}
 
-	virtual double area() const override { return (y1-y0)*(z1-z0); }
-	virtual point3 sample_area(double u1, double u2, vec3& ng) const override {
+	virtual real area() const override { return (y1-y0)*(z1-z0); }
+	virtual point3 sample_area(real u1, real u2, vec3& ng) const override {
 		ng = vec3(1,0,0);
 		return point3(k, y0 + u1*(y1-y0), z0 + u2*(z1-z0));
 	}
@@ -127,7 +127,7 @@ public:
 
 private:
 	std::shared_ptr<material> mp;
-	double y0, y1;
-	double z0, z1;
-	double k;
+	real y0, y1;
+	real z0, z1;
+	real k;
 };

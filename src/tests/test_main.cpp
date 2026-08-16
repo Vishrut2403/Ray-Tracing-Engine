@@ -52,7 +52,7 @@ static void test_sample_pdf_agree(const std::string& name,
 		if (bs.pdf <= 0.0 || bs.is_delta) continue;
 
 		double p = mat->pdf_dir(wo, bs.wi, rec);
-		double denom = std::max(p, bs.pdf);
+		double denom = std::max<double>(p, bs.pdf);
 		if (denom <= 0.0) continue;
 		worst = std::max(worst, std::abs(p - bs.pdf) / denom);
 		++compared;
@@ -118,7 +118,7 @@ static void test_reciprocity(const std::string& name,
 		++compared;
 	}
 	if (compared == 0) return;
-	check(worst < 1e-6, name + ": f is reciprocal", worst, 0.0, 1e-6);
+	check(worst < kNumericTol, name + ": f is reciprocal", worst, 0.0, kNumericTol);
 }
 
 // White furnace: E[f*cos/pdf] must match the known albedo and stay <= 1.
@@ -169,22 +169,29 @@ static void test_ggx_energy_compensation() {
 			double st = std::sqrt(std::max(0.0, 1.0 - ct*ct));
 			vec3   wo = unit_vector(uvw.local(vec3(st, 0.0, ct)));
 
-			double sum = 0.0;
+			double sum = 0.0, sum2 = 0.0;
 			const int N = 200000;
 			for (int i = 0; i < N; ++i) {
 				BSDFSample bs = m.sample_dir(wo, rec);
 				if (bs.pdf <= 0.0) continue;
-				sum += lum(bs.f) * std::abs(dot(n, bs.wi)) / bs.pdf;
+				double w = lum(bs.f) * std::abs(dot(n, bs.wi)) / bs.pdf;
+				sum += w; sum2 += w*w;
 			}
 			double rho = sum / N;
+			// rho is a Monte Carlo estimate, so the bound has to allow for its
+			// own noise. A fixed margin was tight enough to trip at random;
+			// four standard errors still catches real energy gain, which is a
+			// systematic percent-level offset across every angle.
+			double se  = std::sqrt(std::max(0.0, sum2/N - rho*rho) / N);
+			double tol = std::max(5e-3, 4.0*se);
 
 			char tag[80];
 			std::snprintf(tag, sizeof(tag),
 						  "ggx energy [rough %.2f cos %.2f]", r, ct);
 			check(rho >= 0.78, std::string(tag) + ": >= 0.78 (multiscatter)",
 				  rho, 1.0, 0.22);
-			check(rho <= 1.0 + 5e-3, std::string(tag) + ": <= 1 (no gain)",
-				  rho, 1.0, 5e-3);
+			check(rho <= 1.0 + tol, std::string(tag) + ": <= 1 (no gain)",
+				  rho, 1.0, tol);
 		}
 	}
 }

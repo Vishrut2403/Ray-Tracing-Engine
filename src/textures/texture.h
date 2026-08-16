@@ -7,8 +7,8 @@
 class texture {
 public:
 	virtual color value(
-		double u,
-		double v,
+		real u,
+		real v,
 		const point3& p
 	) const = 0;
 };
@@ -17,12 +17,12 @@ class solid_color : public texture {
 public:
 	solid_color() {}
 	solid_color(color c) : color_value(c) {}
-	solid_color(double r, double g, double b)
+	solid_color(real r, real g, real b)
 		: solid_color(color(r,g,b)) {}
 
 	virtual color value(
-		double u,
-		double v,
+		real u,
+		real v,
 		const point3& p
 	) const override {
 		return color_value;
@@ -48,8 +48,8 @@ public:
 		odd(std::make_shared<solid_color>(c2)) {}
 
 	virtual color value(
-		double u,
-		double v,
+		real u,
+		real v,
 		const point3& p
 	) const override {
 
@@ -72,11 +72,11 @@ private:
 class noise_texture : public texture {
 public:
 	noise_texture() : scale(1) {}
-	noise_texture(double sc) : scale(sc) {}
+	noise_texture(real sc) : scale(sc) {}
 
 	virtual color value(
-		double u,
-		double v,
+		real u,
+		real v,
 		const point3& p
 	) const override {
 
@@ -87,7 +87,7 @@ public:
 
 private:
 	perlin noise;
-	double scale;
+	real scale;
 };
 
 #endif

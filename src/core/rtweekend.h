@@ -13,14 +13,14 @@
 using std::shared_ptr;
 using std::make_shared;
  
-const double infinity = std::numeric_limits<double>::infinity();
-const double pi = 3.1415926535897932385;
+const real infinity = std::numeric_limits<real>::infinity();
+const real pi = 3.1415926535897932385;
  
-inline double degrees_to_radians(double degrees) {
+inline real degrees_to_radians(real degrees) {
 	return degrees * pi / 180.0;
 }
  
-inline double clamp(double x, double min, double max) {
+inline real clamp(real x, real min, real max) {
 	if (x < min) return min;
 	if (x > max) return max;
 	return x;

@@ -16,7 +16,7 @@ public:
 
 	~image_texture() { stbi_image_free(data); }
 
-	virtual color value(double u, double v, const point3& p) const override {
+	virtual color value(real u, real v, const point3& p) const override {
 		if (data == nullptr) return color(0,1,1);
 		u = clamp(u, 0.0, 1.0);
 		v = 1.0 - clamp(v, 0.0, 1.0);

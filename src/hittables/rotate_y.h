@@ -7,7 +7,7 @@
 
 class rotate_y : public hittable {
 public:
-	rotate_y(std::shared_ptr<hittable> p, double angle)
+	rotate_y(std::shared_ptr<hittable> p, real angle)
 		: ptr(p) {
 
 		auto radians = degrees_to_radians(angle);
@@ -92,8 +92,8 @@ point3 max(-infinity, -infinity, -infinity);
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 
@@ -103,8 +103,8 @@ point3 max(-infinity, -infinity, -infinity);
 
 private:
 	std::shared_ptr<hittable> ptr;
-	double sin_theta;
-	double cos_theta;
+	real sin_theta;
+	real cos_theta;
 	bool hasbox;
 	aabb bbox;
 };

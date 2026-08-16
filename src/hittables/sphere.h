@@ -8,8 +8,8 @@
 
 inline void get_sphere_uv(
 	const point3& p,
-	double& u,
-	double& v
+	real& u,
+	real& v
 ) {
 	auto theta = acos(-p.y());
 	auto phi   = atan2(-p.z(), p.x()) + pi;
@@ -22,7 +22,7 @@ class sphere : public hittable {
 public:
 	sphere() {}
 
-	sphere(point3 cen, double r, std::shared_ptr<material> m)
+	sphere(point3 cen, real r, std::shared_ptr<material> m)
 		: center(cen), radius(r), mat_ptr(m) {}
 
 	virtual bool hit(
@@ -63,8 +63,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 
@@ -76,7 +76,7 @@ public:
 		return true;
 	}
 
-	virtual double pdf_value(
+	virtual real pdf_value(
 		const point3& origin,
 		const vec3& direction
 	) const override {
@@ -89,17 +89,17 @@ public:
 			return 0.0;
 
 		vec3 to_center = center - origin;
-		double distance_squared = to_center.length_squared();
-		double radius_squared   = radius * radius;
+		real distance_squared = to_center.length_squared();
+		real radius_squared   = radius * radius;
 
 		// If shading point is inside sphere
 		if (distance_squared <= radius_squared)
 			return 1.0 / (4.0 * pi);
 
-		double cos_theta_max =
+		real cos_theta_max =
 			sqrt(1.0 - radius_squared / distance_squared);
 
-		double solid_angle =
+		real solid_angle =
 			2.0 * pi * (1.0 - cos_theta_max);
 
 		return 1.0 / solid_angle;
@@ -110,8 +110,8 @@ public:
 	) const override {
 
 		vec3 direction = center - origin;
-		double distance_squared = direction.length_squared();
-		double radius_squared   = radius * radius;
+		real distance_squared = direction.length_squared();
+		real radius_squared   = radius * radius;
 
 		// Build orthonormal basis toward sphere
 		onb uvw;
@@ -122,19 +122,19 @@ public:
 			return random_unit_vector();
 		}
 
-		double cos_theta_max =
+		real cos_theta_max =
 			sqrt(1.0 - radius_squared / distance_squared);
 
-		double r1 = random_double();
-		double r2 = random_double();
+		real r1 = random_double();
+		real r2 = random_double();
 
-		double cos_theta =
+		real cos_theta =
 			1.0 - r2 * (1.0 - cos_theta_max);
 
-		double sin_theta =
+		real sin_theta =
 			sqrt(1.0 - cos_theta * cos_theta);
 
-		double phi = 2.0 * pi * r1;
+		real phi = 2.0 * pi * r1;
 
 		vec3 local_dir(
 			cos(phi) * sin_theta,
@@ -147,7 +147,7 @@ public:
 
 public:
 	point3 center;
-	double radius;
+	real radius;
 	std::shared_ptr<material> mat_ptr;
 };
 

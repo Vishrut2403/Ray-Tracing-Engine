@@ -33,27 +33,27 @@ public:
 
 	virtual bool hit(const ray& r, const interval& ray_t,
 					 hit_record& rec) const override {
-		const double eps = 1e-8;
+		const real eps = 1e-8;
 		vec3 e1 = v1 - v0;
 		vec3 e2 = v2 - v0;
 		vec3 h  = cross(r.direction(), e2);
-		double a = dot(e1, h);
+		real a = dot(e1, h);
 		if (std::abs(a) < eps) return false;
 
-		double f = 1.0 / a;
+		real f = 1.0 / a;
 		vec3   s = r.origin() - v0;
-		double u = f * dot(s, h);
+		real u = f * dot(s, h);
 		if (u < 0.0 || u > 1.0) return false;
 
 		vec3   q = cross(s, e1);
-		double v = f * dot(r.direction(), q);
+		real v = f * dot(r.direction(), q);
 		if (v < 0.0 || u + v > 1.0) return false;
 
-		double t = f * dot(e2, q);
+		real t = f * dot(e2, q);
 		if (!ray_t.surrounds(t)) return false;
 
 		// Interpolate smooth normal using barycentric coords
-		double w = 1.0 - u - v;
+		real w = 1.0 - u - v;
 		vec3 smooth_normal = unit_vector(w*n0 + u*n1 + v*n2);
 
 		rec.t       = t;
@@ -65,7 +65,7 @@ public:
 		return true;
 	}
 
-	virtual bool bounding_box(double, double, aabb& out) const override {
+	virtual bool bounding_box(real, real, aabb& out) const override {
 		point3 lo(fmin(fmin(v0.x(),v1.x()),v2.x()) - 1e-4,
 				  fmin(fmin(v0.y(),v1.y()),v2.y()) - 1e-4,
 				  fmin(fmin(v0.z(),v1.z()),v2.z()) - 1e-4);
@@ -80,7 +80,7 @@ public:
 inline std::shared_ptr<hittable> load_obj(
 	const std::string& path,
 	std::shared_ptr<material> mat,
-	double scale  = 1.0,
+	real scale  = 1.0,
 	vec3   offset = vec3(0,0,0)
 ) {
 	tinyobj::attrib_t                attrib;
@@ -131,7 +131,7 @@ inline std::shared_ptr<hittable> load_obj(
 
 	// Normalize accumulated normals
 	for (auto& n : smooth_normals) {
-		double len = n.length();
+		real len = n.length();
 		if (len > 1e-8) n = n / len;
 		else            n = vec3(0, 1, 0); // degenerate fallback
 	}

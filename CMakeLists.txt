@@ -8,6 +8,10 @@ set(CMAKE_CUDA_STANDARD 17)
 set(CMAKE_CUDA_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Geometry and shading run in single precision. This switches the `real`
+# typedef back to double, for use as a precision reference.
+option(RT_DOUBLE "Use double precision for geometry and shading" OFF)
+
 # RTX 3060 = sm_86
 set(CMAKE_CUDA_ARCHITECTURES 86)
 
@@ -64,6 +68,9 @@ foreach(tgt render tests)
     )
     # Allow .cu files to include project headers
     set_target_properties(${tgt} PROPERTIES CUDA_SEPARABLE_COMPILATION ON)
+    if(RT_DOUBLE)
+        target_compile_definitions(${tgt} PRIVATE RT_USE_DOUBLE)
+    endif()
     target_link_libraries(${tgt} PRIVATE
         OpenMP::OpenMP_CXX
         OpenGL::GL

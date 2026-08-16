@@ -16,7 +16,7 @@
 #include <cstring>
 #include <functional>
 
-struct GltfUV { double u, v; };
+struct GltfUV { real u, v; };
 
 class gltf_triangle : public hittable {
 public:
@@ -36,25 +36,25 @@ public:
 
 	virtual bool hit(const ray& r, const interval& ray_t,
 						hit_record& rec) const override {
-			const double eps = 1e-8;
+			const real eps = 1e-8;
 			vec3 e1 = v1 - v0, e2 = v2 - v0;
 			vec3 h  = cross(r.direction(), e2);
-			double a = dot(e1, h);
+			real a = dot(e1, h);
 			if (std::abs(a) < eps) return false;
 
-			double f = 1.0 / a;
+			real f = 1.0 / a;
 			vec3   s = r.origin() - v0;
-			double u = f * dot(s, h);
+			real u = f * dot(s, h);
 			if (u < 0.0 || u > 1.0) return false;
 
 			vec3   q = cross(s, e1);
-			double v = f * dot(r.direction(), q);
+			real v = f * dot(r.direction(), q);
 			if (v < 0.0 || u + v > 1.0) return false;
 
-			double t = f * dot(e2, q);
+			real t = f * dot(e2, q);
 			if (!ray_t.surrounds(t)) return false;
 
-			double w = 1.0 - u - v;
+			real w = 1.0 - u - v;
 
 			// Interpolate smooth normal and UV
 			vec3 smooth_n = unit_vector(n0*w + n1*u + n2*v);
@@ -62,13 +62,13 @@ public:
 			rec.v = uv0.v*w + uv1.v*u + uv2.v*v;
 
 			// Compute tangent from UV gradients (Lengyel 2001)
-			double du1 = uv1.u - uv0.u, du2 = uv2.u - uv0.u;
-			double dv1 = uv1.v - uv0.v, dv2 = uv2.v - uv0.v;
-			double det = du1*dv2 - du2*dv1;
+			real du1 = uv1.u - uv0.u, du2 = uv2.u - uv0.u;
+			real dv1 = uv1.v - uv0.v, dv2 = uv2.v - uv0.v;
+			real det = du1*dv2 - du2*dv1;
 
 			vec3 tangent, bitangent;
 			if (std::abs(det) > 1e-8) {
-				double inv = 1.0 / det;
+				real inv = 1.0 / det;
 				tangent   = unit_vector((e1*dv2 - e2*dv1) * inv);
 				bitangent = unit_vector((e2*du1 - e1*du2) * inv);
 			} else {
@@ -91,7 +91,7 @@ public:
 			return true;
 		}
 
-	virtual bool bounding_box(double, double, aabb& out) const override {
+	virtual bool bounding_box(real, real, aabb& out) const override {
 		point3 lo(fmin(fmin(v0.x(),v1.x()),v2.x()) - 1e-4,
 				  fmin(fmin(v0.y(),v1.y()),v2.y()) - 1e-4,
 				  fmin(fmin(v0.z(),v1.z()),v2.z()) - 1e-4);
@@ -111,13 +111,13 @@ public:
 	std::shared_ptr<texture> normal_tex;      // tangent-space normal map
 	std::shared_ptr<texture> ao_tex;             // ambient occlusion (R channel)
 	color  base_color_factor = color(1,1,1);
-	double metallic_factor   = 1.0;
-	double roughness_factor  = 1.0;
+	real metallic_factor   = 1.0;
+	real roughness_factor  = 1.0;
 	color  emissive_factor   = color(0,0,0);
-	double normal_scale      = 1.0;           // normal map strength
+	real normal_scale      = 1.0;           // normal map strength
 
 	virtual color emitted(const ray&, const hit_record& rec,
-						   double u, double v, const point3& p) const override {
+						   real u, real v, const point3& p) const override {
 		if (!rec.front_face) return color(0,0,0);
 		color e = emissive_factor;
 		if (emissive_tex) e = e * emissive_tex->value(u, v, p);
@@ -140,7 +140,7 @@ public:
 		return delegate.f(wo, wi, perturbed);
 	}
 
-	virtual double pdf(const ray& wo, const vec3& wi,
+	virtual real pdf(const ray& wo, const vec3& wi,
 					   const hit_record& rec) const override {
 		hit_record perturbed = perturb_normal(rec);
 		ggx delegate(resolved_albedo(rec), resolved_roughness(rec),
@@ -153,9 +153,9 @@ private:
 		if (!normal_tex) return rec;
 
 		color ns = normal_tex->value(rec.u, rec.v, rec.p);
-		double nx = (ns.x() * 2.0 - 1.0) * normal_scale;
-		double ny = (ns.y() * 2.0 - 1.0) * normal_scale;
-		double nz =  ns.z() * 2.0 - 1.0; 
+		real nx = (ns.x() * 2.0 - 1.0) * normal_scale;
+		real ny = (ns.y() * 2.0 - 1.0) * normal_scale;
+		real nz =  ns.z() * 2.0 - 1.0; 
 
 		vec3 n_world = unit_vector(
 			rec.tangent   * nx +
@@ -174,18 +174,18 @@ private:
 		color alb = base_color_factor;
 		if (albedo_tex) alb = alb * albedo_tex->value(rec.u, rec.v, rec.p);
 		if (ao_tex) {
-			double ao = ao_tex->value(rec.u, rec.v, rec.p).x();
+			real ao = ao_tex->value(rec.u, rec.v, rec.p).x();
 			alb = alb * ao;
 		}
 		return alb;
 	}
-	double resolved_roughness(const hit_record& rec) const {
-		double r = roughness_factor;
+	real resolved_roughness(const hit_record& rec) const {
+		real r = roughness_factor;
 		if (metal_rough_tex) r *= metal_rough_tex->value(rec.u,rec.v,rec.p).y();
 		return clamp(r, 0.001, 1.0);
 	}
-	double resolved_metallic(const hit_record& rec) const {
-		double m = metallic_factor;
+	real resolved_metallic(const hit_record& rec) const {
+		real m = metallic_factor;
 		if (metal_rough_tex) m *= metal_rough_tex->value(rec.u,rec.v,rec.p).z();
 		return clamp(m, 0.0, 1.0);
 	}
@@ -248,7 +248,7 @@ static std::vector<unsigned int> get_accessor_indices(
 
 inline std::shared_ptr<hittable> load_gltf(
 	const std::string& path,
-	double scale  = 1.0,
+	real scale  = 1.0,
 	vec3   offset = vec3(0,0,0)
 ) {
 	tinygltf::Model    model;
@@ -312,7 +312,7 @@ inline std::shared_ptr<hittable> load_gltf(
 	std::function<void(int)> proc_node = [&](int ni) {
 		const auto& node = model.nodes[ni];
 
-		double ns = scale;
+		real ns = scale;
 		vec3   no = offset;
 		if (!node.translation.empty())
 			no = no + vec3(node.translation[0]*scale,
@@ -362,7 +362,7 @@ inline std::shared_ptr<hittable> load_gltf(
 					}
 					for (int i=0;i<nv;++i) {
 						vec3 n(nor[i*3],nor[i*3+1],nor[i*3+2]);
-						double l=n.length();
+						real l=n.length();
 						if(l>1e-8){nor[i*3+0]/=(float)l;nor[i*3+1]/=(float)l;nor[i*3+2]/=(float)l;}
 					}
 				}

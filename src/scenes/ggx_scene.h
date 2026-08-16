@@ -24,11 +24,11 @@ inline Scene build_ggx_scene() {
 	world.add(std::make_shared<xz_rect>(-8, 8, -4, 4, -1.0, floor_mat));
 
 	// Roughness values: 0.025 -> 1.0
-	double roughness_steps[] = { 0.025, 0.25, 0.5, 0.75, 1.0 };
+	real roughness_steps[] = { 0.025, 0.25, 0.5, 0.75, 1.0 };
 
 	for (int i = 0; i < 5; ++i) {
-		double r = roughness_steps[i];
-		double x = (i - 2) * 2.5;
+		real r = roughness_steps[i];
+		real x = (i - 2) * 2.5;
 
 		// Top row — metallic gold
 		world.add(std::make_shared<sphere>(

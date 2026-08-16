@@ -59,8 +59,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 		output_box = aabb(box_min, box_max);

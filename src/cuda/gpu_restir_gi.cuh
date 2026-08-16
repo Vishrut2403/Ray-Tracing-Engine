@@ -35,7 +35,7 @@ struct GIReservoir {
 	__device__ bool update(const PathSample& x, float w, curandState* rng) {
 		w_sum += w;
 		M     += 1;
-		if (rand_double(rng) < (double)(w / (w_sum + 1e-30f))) {
+		if (rand_double(rng) < (real)(w / (w_sum + 1e-30f))) {
 			y = x;
 			return true;
 		}
@@ -82,7 +82,7 @@ __device__ inline float gi_p_hat(
 	if (dist < 1e-6f) return 0.0f;
 
 	vec3  wi    = d / dist;
-	float cos_i = fmaxf(0.0f, (float)dot(gbuf.normal, wi));
+	float cos_i = rmax(0.0f, (float)dot(gbuf.normal, wi));
 	if (cos_i < 1e-6f) return 0.0f;
 
 	float lum = 0.2126f*(float)ps.L_o.x()
@@ -92,10 +92,10 @@ __device__ inline float gi_p_hat(
 	float brdf_w = 1.0f;
 	if (materials) {
 		vec3 f   = gpu_f_dir(materials[gbuf.mat_id], gbuf.wo, wi, gbuf.normal);
-		brdf_w   = fmaxf(0.0f, (float)(f.x() + f.y() + f.z()) / 3.0f);
+		brdf_w   = rmax(0.0f, (float)(f.x() + f.y() + f.z()) / 3.0f);
 	}
 
-	return fmaxf(0.0f, lum * cos_i * brdf_w);
+	return rmax(0.0f, lum * cos_i * brdf_w);
 }
 
 // Reconnection Jacobian
@@ -106,17 +106,17 @@ __device__ inline float reconnection_jacobian(
 	vec3  d_orig    = ps.x_s - ps.x_v;
 	float dist_orig = (float)d_orig.length();
 	if (dist_orig < 1e-6f) return 0.0f;
-	float cos_orig  = fmaxf(1e-6f, (float)fabs(dot(ps.n_s,
+	float cos_orig  = rmax(1e-6f, (float)fabs(dot(ps.n_s,
 							d_orig / dist_orig)));
 
 	vec3  d_new    = ps.x_s - x_v_new;
 	float dist_new = (float)d_new.length();
 	if (dist_new < 1e-6f) return 0.0f;
-	float cos_new  = fmaxf(1e-6f, (float)fabs(dot(ps.n_s,
+	float cos_new  = rmax(1e-6f, (float)fabs(dot(ps.n_s,
 							d_new / dist_new)));
 
 	float jacobian = (cos_new * dist_orig * dist_orig)
 				   / (cos_orig * dist_new * dist_new + 1e-10f);
 
-	return fminf(jacobian, 5.0f);   // ← tighter clamp than before
+	return rmin(jacobian, 5.0f);   // ← tighter clamp than before
 }

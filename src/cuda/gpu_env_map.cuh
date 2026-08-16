@@ -44,14 +44,14 @@ __device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, curandState* rng,
 	int col = gpu_cdf_sample(cond, W, r2);
 	col = min(max(col, 0), W - 1);
 
-	double u     = (col + 0.5) / W;
-	double v     = (row + 0.5) / H;
+	real u     = (col + 0.5) / W;
+	real v     = (row + 0.5) / H;
 	// Must invert gpu_env_Le: row 0 is the zenith, u = 0.5 is phi = 0.
-	double phi   = 2.0 * 3.14159265358979 * (u - 0.5);
-	double theta = 3.14159265358979 * v;
+	real phi   = 2.0 * 3.14159265358979 * (u - 0.5);
+	real theta = 3.14159265358979 * v;
 
-	double sin_theta = sin(theta);
-	double cos_theta = cos(theta);
+	real sin_theta = sin(theta);
+	real cos_theta = cos(theta);
 
 	vec3 dir(sin_theta * cos(phi),
 			 cos_theta,
@@ -59,7 +59,7 @@ __device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, curandState* rng,
 
 	// pixel_pdf is a per-pixel mass; * W*H makes it a density over (u,v).
 	float p = env.d_pixel_pdf[row * W + col];
-	double n = (double)W * H;
+	real n = (real)W * H;
 	out_pdf = (sin_theta > 1e-8f)
 			  ? (float)(p * n / (sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979))
 			  : 0.0f;
@@ -71,8 +71,8 @@ __device__ inline vec3 gpu_env_Le(const GpuEnvMap& env, const vec3& dir) {
 	if (!env.valid) return vec3(0,0,0);
 	vec3 d = unit_vector(dir);
 
-	double u = 0.5 + atan2(d.z(), d.x()) / (2.0 * 3.14159265358979);
-	double v = 0.5 + asin(fmax(-1.0, fmin(1.0, (double)d.y()))) / 3.14159265358979;
+	real u = 0.5 + atan2(d.z(), d.x()) / (2.0 * 3.14159265358979);
+	real v = 0.5 + asin(rmax(-1.0, rmin(1.0, (real)d.y()))) / 3.14159265358979;
 	v = 1.0 - v; 
 
 	int i = min((int)(u * env.width),  env.width  - 1);
@@ -87,18 +87,18 @@ __device__ inline float gpu_env_pdf(const GpuEnvMap& env, const vec3& dir) {
 	if (!env.valid) return 0.0f;
 	vec3 d = unit_vector(dir);
 
-	double u = 0.5 + atan2(d.z(), d.x()) / (2.0 * 3.14159265358979);
-	double v = 0.5 + asin(fmax(-1.0, fmin(1.0, (double)d.y()))) / 3.14159265358979;
+	real u = 0.5 + atan2(d.z(), d.x()) / (2.0 * 3.14159265358979);
+	real v = 0.5 + asin(rmax(-1.0, rmin(1.0, (real)d.y()))) / 3.14159265358979;
 	v = 1.0 - v;
 
 	int i = min((int)(u * env.width),  env.width  - 1);
 	int j = min((int)(v * env.height), env.height - 1);
 	i = max(i, 0); j = max(j, 0);
 
-	double sin_theta = sqrt(1.0 - (double)d.y() * (double)d.y());
+	real sin_theta = sqrt(1.0 - (real)d.y() * (real)d.y());
 	if (sin_theta < 1e-8) return 0.0f;
 
 	float p = env.d_pixel_pdf[j * env.width + i];
-	double n = (double)env.width * env.height;
+	real n = (real)env.width * env.height;
 	return (float)(p * n / (sin_theta * 2.0 * 3.14159265358979 * 3.14159265358979));
 }

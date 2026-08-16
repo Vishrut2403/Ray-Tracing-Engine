@@ -19,13 +19,13 @@ public:
 		stbi_image_free(data);
 	}
 
-	virtual color value(double u, double v, const point3&) const override {
+	virtual color value(real u, real v, const point3&) const override {
 		if (!data) return color(0, 1, 1);
 		u = clamp(u, 0.0, 1.0);
 		v = clamp(1.0 - v, 0.0, 1.0);
 
-		int i = std::min((int)(u * width),  width  - 1);
-		int j = std::min((int)(v * height), height - 1);
+		int i = std::min<real>((int)(u * width),  width  - 1);
+		int j = std::min<real>((int)(v * height), height - 1);
 
 		float* px = data + (j * width + i) * 3;
 		return color(px[0], px[1], px[2]);
@@ -33,8 +33,8 @@ public:
 
 	color sample_dir(const vec3& dir) const {
 		vec3 d = unit_vector(dir);
-		double u = 0.5 + atan2(d.z(), d.x()) / (2.0 * pi);
-		double v = 0.5 + asin(clamp(d.y(), -1.0, 1.0)) / pi;
+		real u = 0.5 + atan2(d.z(), d.x()) / (2.0 * pi);
+		real v = 0.5 + asin(clamp(d.y(), -1.0, 1.0)) / pi;
 		return value(u, v, point3(0,0,0));
 	}
 

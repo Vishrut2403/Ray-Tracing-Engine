@@ -18,18 +18,18 @@ inline GpuEnvMap* upload_env_map(const env_light& env) {
 	std::vector<float> marginal_cdf(H + 1, 0.0f);
 	std::vector<float> cond_cdf((size_t)H * (W + 1), 0.0f);
 
-	const double pi = 3.14159265358979;
+	const real pi = 3.14159265358979;
 
 	for (int j = 0; j < H; ++j) {
-		double theta   = pi * (j + 0.5) / H;
-		double sin_t   = sin(theta);
-		double row_sum = 0.0;
+		real theta   = pi * (j + 0.5) / H;
+		real sin_t   = sin(theta);
+		real row_sum = 0.0;
 		cond_cdf[j * (W+1) + 0] = 0.0f;
 
 		for (int i = 0; i < W; ++i) {
 			float* px  = cpu_pixels + (j * W + i) * 3;
-			double lum = 0.2126*px[0] + 0.7152*px[1] + 0.0722*px[2];
-			double w   = lum * sin_t;
+			real lum = 0.2126*px[0] + 0.7152*px[1] + 0.0722*px[2];
+			real w   = lum * sin_t;
 			pixel_pdf[j * W + i] = (float)w;
 			row_sum += w;
 			cond_cdf[j * (W+1) + i + 1] = (float)row_sum;

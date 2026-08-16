@@ -31,8 +31,8 @@ __global__ void restir_initial_kernel(
 	int idx = y*W + x;
 	curandState rng = rng_states[idx];
 
-	double u = (x + rand_double(&rng)) / (W-1);
-	double v = (y + rand_double(&rng)) / (H-1);
+	real u = (x + rand_double(&rng)) / (W-1);
+	real v = (y + rand_double(&rng)) / (H-1);
 	ray primary = gpu_get_ray(cam, u, v, &rng);
 
 	GBufferPixel& gbuf = gbuffer[idx];
@@ -268,7 +268,7 @@ __global__ void restir_shade_kernel(
 	if (gbuf.is_emitter) {
 		vec3 emit = gbuf.Le * gbuf.beta;
 		if (medium.active)
-			emit = emit * transmittance(medium, (double)gbuf.depth);
+			emit = emit * transmittance(medium, (real)gbuf.depth);
 		d_accum[idx*3+0] += (float)emit.x();
 		d_accum[idx*3+1] += (float)emit.y();
 		d_accum[idx*3+2] += (float)emit.z();
@@ -289,7 +289,7 @@ __global__ void restir_shade_kernel(
 		const Reservoir&   res = reservoirs[idx];
 
 		vec3 tr_primary = medium.active
-			? transmittance(medium, (double)gbuf.depth)
+			? transmittance(medium, (real)gbuf.depth)
 			: vec3(1,1,1);
 
 		// Direct lighting via ReSTIR DI────
@@ -306,10 +306,10 @@ __global__ void restir_shade_kernel(
 					float cos_l = (float)fabs(dot(res.y.normal, -(wi)));
 					float G     = cos_i * cos_l / (dist * dist);
 					vec3 tr_shadow = medium.active
-						? transmittance(medium, (double)dist)
+						? transmittance(medium, (real)dist)
 						: vec3(1,1,1);
 					L = L + tr_primary * tr_shadow
-						  * f * res.y.Le * (double)(G * res.W);
+						  * f * res.y.Le * (real)(G * res.W);
 				}
 			}
 		}
@@ -334,7 +334,7 @@ __global__ void restir_shade_kernel(
 
 					// BRDF at primary hit toward secondary hit
 					vec3  f_gi   = gpu_f_dir(mat, gbuf.wo, wi_gi, gbuf.normal);
-					float cos_gi = fmaxf(0.0f, (float)dot(gbuf.normal, wi_gi));
+					float cos_gi = rmax(0.0f, (float)dot(gbuf.normal, wi_gi));
 
 					// Jacobian corrects for geometry change during reconnection
 					float jac = reconnection_jacobian(gi_res.y, gbuf.pos);
@@ -344,11 +344,11 @@ __global__ void restir_shade_kernel(
 					// The estimator is: f(x) * L_o(x_s) * cos(theta) * W * |J|
 					// No extra division needed — W handles 1/pdf implicitly
 					vec3 indirect_L = f_gi * gi_res.y.L_o
-									* (double)(cos_gi * gi_res.W * jac);
+									* (real)(cos_gi * gi_res.W * jac);
 
 					if (medium.active)
 						indirect_L = indirect_L
-								* transmittance(medium, (double)dist_gi);
+								* transmittance(medium, (real)dist_gi);
 
 					L = L + tr_primary * indirect_L;
 				}
@@ -361,14 +361,14 @@ __global__ void restir_shade_kernel(
 			gbuf_rec.mat_id     = gbuf.mat_id;
 			gbuf_rec.front_face = true;
 			gbuf_rec.u = gbuf_rec.v = 0.0;
-			gbuf_rec.t = (double)gbuf.depth;
+			gbuf_rec.t = (real)gbuf.depth;
 
 			GpuBSDFSample bs = gpu_sample(mat,
-				ray(gbuf.pos - gbuf.wo*(double)RAY_OFFSET, -gbuf.wo, 0.0),
+				ray(gbuf.pos - gbuf.wo*(real)RAY_OFFSET, -gbuf.wo, 0.0),
 				gbuf_rec, &rng);
 
 			if (bs.pdf > 0.0) {
-				double cos_t = fabs(dot(gbuf.normal, bs.wi));
+				real cos_t = fabs(dot(gbuf.normal, bs.wi));
 				vec3 beta = bs.is_delta
 							? bs.f
 							: bs.f * cos_t / bs.pdf;
@@ -381,7 +381,7 @@ __global__ void restir_shade_kernel(
 											 interval(RAY_OFFSET, 1e30),
 											 irec,
 											 tris, tri_bvh, tri_root, n_tris);
-				double t_surface = hit_surface ? irec.t : 1e30;
+				real t_surface = hit_surface ? irec.t : 1e30;
 
 				MediumSample ms = sample_medium(medium, indirect_ray,
 												t_surface, &rng);
@@ -391,10 +391,10 @@ __global__ void restir_shade_kernel(
 					if (n_lights > 0) {
 						vec3 to_l = gpu_light_random(hittables, light_ids,
 													  n_lights, ms.pos, &rng);
-						double dl = to_l.length();
+						real dl = to_l.length();
 						if (dl > 1e-6) {
 							vec3 wl = to_l / dl;
-							double lpdf = gpu_light_pdf(hittables, light_ids,
+							real lpdf = gpu_light_pdf(hittables, light_ids,
 														 n_lights, ms.pos, wl);
 							if (lpdf > 0.0) {
 								GpuHitRecord sr;
@@ -420,7 +420,7 @@ __global__ void restir_shade_kernel(
 												? transmittance(medium, dl)
 												: vec3(1,1,1);
 											L = L + beta * lLe * tr_light
-													  * (double)(phase
+													  * (real)(phase
 																 / (float)lpdf);
 										}
 									}
@@ -433,15 +433,15 @@ __global__ void restir_shade_kernel(
 										   irec.front_face);
 					if (iLe.length_squared() > 0.0) {
 						// DI owns the area-light term; taking it here too
-						// double-counts.
+						// real-counts.
 						if (n_lights == 0) L = L + beta * iLe;
 					} else if (!bs.is_delta && n_lights > 0) {
 						vec3 to_l = gpu_light_random(hittables, light_ids,
 													  n_lights, irec.p, &rng);
-						double dl = to_l.length();
+						real dl = to_l.length();
 						if (dl > 1e-6) {
 							vec3 wl = to_l / dl;
-							double lpdf = gpu_light_pdf(hittables, light_ids,
+							real lpdf = gpu_light_pdf(hittables, light_ids,
 														 n_lights, irec.p, wl);
 							if (lpdf > 0.0) {
 								GpuHitRecord sr;
@@ -462,7 +462,7 @@ __global__ void restir_shade_kernel(
 											vec3 if_ = gpu_f_dir(
 												materials[irec.mat_id],
 												-bs.wi, wl, irec.normal);
-											double ct2 = fabs(
+											real ct2 = fabs(
 												dot(irec.normal, wl));
 											vec3 tr_light = medium.active
 												? transmittance(medium, dl)
@@ -488,7 +488,7 @@ __global__ void restir_shade_kernel(
 	L = L * gbuf.beta;
 
 	// Clamp fireflies
-	double lum = 0.2126*L.x() + 0.7152*L.y() + 0.0722*L.z();
+	real lum = 0.2126*L.x() + 0.7152*L.y() + 0.0722*L.z();
 	if (lum > 50.0) L = L * (50.0/lum);
 
 	d_accum[idx*3+0] += (float)L.x();

@@ -49,8 +49,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const override {
 
@@ -75,7 +75,7 @@ public:
 		return true;
 	}
 
-	virtual double pdf_value(
+	virtual real pdf_value(
 		const point3& origin,
 		const vec3& direction
 	) const override {
@@ -83,8 +83,8 @@ public:
 		if (objects.empty())
 			return 0.0;
 
-		double weight = 1.0 / objects.size();
-		double sum = 0.0;
+		real weight = 1.0 / objects.size();
+		real sum = 0.0;
 
 		for (const auto& object : objects)
 			sum += weight * object->pdf_value(origin, direction);
@@ -99,9 +99,9 @@ public:
 		if (objects.empty())
 			return vec3(1, 0, 0);
 
-		int index = static_cast<int>(
-			random_double(0, objects.size())
-		);
+		int last  = static_cast<int>(objects.size()) - 1;
+		int index = static_cast<int>(random_double(0, objects.size()));
+		if (index > last) index = last;
 
 		return objects[index]->random(origin);
 	}

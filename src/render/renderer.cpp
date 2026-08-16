@@ -54,8 +54,8 @@ void Renderer::render(
 				color pixel(0,0,0);
 				for (int s = 0; s < samples_per_pixel; ++s) {
 					sampler_begin_sample((uint32_t)(j*W + i), (uint32_t)s);
-					double u = (i + random_double()) / (W - 1);
-					double v = (j + random_double()) / (H - 1);
+					real u = (i + random_double()) / (W - 1);
+					real v = (j + random_double()) / (H - 1);
 					ray r = cam.get_ray(u, v);
 
 					color sample;
@@ -67,7 +67,7 @@ void Renderer::render(
 					pixel += sample;
 				}
 				sampler_end_sample();
-				pixel /= double(samples_per_pixel);
+				pixel /= real(samples_per_pixel);
 				buf[(j-tile.y0)*tw + (i-tile.x0)] = pixel;
 			}
 		}
@@ -89,7 +89,7 @@ void Renderer::render(
 	// Merge the light-tracing splats; same 1/spp as the camera paths.
 	if (use_bdpt) {
 		std::lock_guard<std::mutex> lock(fb.mtx);
-		double inv_spp = 1.0 / double(samples_per_pixel);
+		real inv_spp = 1.0 / real(samples_per_pixel);
 		for (int j = 0; j < H; ++j) {
 			for (int i = 0; i < W; ++i) {
 				size_t k = ((size_t)j*W + i)*3;

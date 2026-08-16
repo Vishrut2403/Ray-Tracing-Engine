@@ -20,9 +20,9 @@ public:
 			for (int i = 0; i < W; ++i) {
 				int idx = j * W + i;
 				color c = fb.get(i, j);
-				color_in[idx*3+0] = (float)std::max(0.0, c.x());
-				color_in[idx*3+1] = (float)std::max(0.0, c.y());
-				color_in[idx*3+2] = (float)std::max(0.0, c.z());
+				color_in[idx*3+0] = (float)std::max<real>(0, c.x());
+				color_in[idx*3+1] = (float)std::max<real>(0, c.y());
+				color_in[idx*3+2] = (float)std::max<real>(0, c.z());
 			}
 		}
 

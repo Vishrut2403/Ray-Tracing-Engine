@@ -24,7 +24,7 @@ public:
 		delete[] perm_z;
 	}
 
-	double noise(const point3& p) const {
+	real noise(const point3& p) const {
 		auto u = p.x() - floor(p.x());
 		auto v = p.y() - floor(p.y());
 		auto w = p.z() - floor(p.z());
@@ -48,7 +48,7 @@ public:
 		return perlin_interp(c, u, v, w);
 	}
 
-	double turb(const point3& p, int depth = 7) const {
+	real turb(const point3& p, int depth = 7) const {
 		auto accum = 0.0;
 		auto temp_p = p;
 		auto weight = 1.0;
@@ -88,18 +88,18 @@ private:
 		}
 	}
 
-	static double perlin_interp(
+	static real perlin_interp(
 		vec3 c[2][2][2],
-		double u,
-		double v,
-		double w
+		real u,
+		real v,
+		real w
 	) {
 		// Hermite smoothing
 		auto uu = u*u*(3-2*u);
 		auto vv = v*v*(3-2*v);
 		auto ww = w*w*(3-2*w);
 
-		double accum = 0.0;
+		real accum = 0.0;
 
 		for (int i = 0; i < 2; i++)
 			for (int j = 0; j < 2; j++)

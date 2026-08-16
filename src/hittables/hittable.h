@@ -10,10 +10,10 @@ struct hit_record {
 	vec3   normal;
 	vec3   tangent   = vec3(1,0,0); 
 	vec3   bitangent = vec3(0,1,0);  
-	double t;
+	real t;
 	bool   front_face;
-	double u;
-	double v;
+	real u;
+	real v;
 	std::shared_ptr<material> mat_ptr;
 
 	void set_face_normal(const ray& r, const vec3& outward_normal) {
@@ -29,21 +29,21 @@ public:
 		hit_record& rec
 	) const = 0;
 	virtual bool bounding_box(
-		double time0,
-		double time1,
+		real time0,
+		real time1,
 		aabb& output_box
 	) const = 0;
-	virtual double pdf_value(const point3&, const vec3&) const { return 0.0; }
+	virtual real pdf_value(const point3&, const vec3&) const { return 0.0; }
 	virtual vec3   random(const point3&) const { return vec3(1,0,0); }
 
 	// Area sampling for BDPT: a light subpath starts on the emitter with no
 	// receiver, so pdf_value/random above do not apply. area() == 0 means the
 	// shape cannot start one.
-	virtual double area() const { return 0.0; }
+	virtual real area() const { return 0.0; }
 
 	// Uniform point on the surface; ng is geometric, the caller picks the
 	// emitting side (flip_face can reverse it).
-	virtual point3 sample_area(double, double, vec3& ng) const {
+	virtual point3 sample_area(real, real, vec3& ng) const {
 		ng = vec3(0,1,0);
 		return point3(0,0,0);
 	}

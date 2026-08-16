@@ -38,7 +38,7 @@ struct Reservoir {
 	__device__ bool update(const LightSample& x, float w, curandState* rng) {
 		w_sum += w;
 		M     += 1;
-		if (rand_double(rng) < (double)(w / (w_sum + 1e-30f))) {
+		if (rand_double(rng) < (real)(w / (w_sum + 1e-30f))) {
 			y = x;
 			return true;
 		}
@@ -96,12 +96,12 @@ __device__ inline LightSample sample_light(
 	const GpuHittable& lh = hittables[light_ids[li]];
 	s.light_id = li;
 
-	double rx = (double)lh.a0 + rand_double(rng)*(lh.a1-lh.a0);
-	double rz = (double)lh.b0 + rand_double(rng)*(lh.b1-lh.b0);
-	s.pos    = vec3(rx, (double)lh.k, rz) + lh.translate_offset;
+	real rx = (real)lh.a0 + rand_double(rng)*(lh.a1-lh.a0);
+	real rz = (real)lh.b0 + rand_double(rng)*(lh.b1-lh.b0);
+	s.pos    = vec3(rx, (real)lh.k, rz) + lh.translate_offset;
 	s.normal = lh.flip_face ? vec3(0,-1,0) : vec3(0,1,0);
 
-	double area = (double)(lh.a1-lh.a0) * (double)(lh.b1-lh.b0);
+	real area = (real)(lh.a1-lh.a0) * (real)(lh.b1-lh.b0);
 	s.pdf = (float)(1.0 / (area * n_lights));
 
 	s.Le = gpu_emitted(materials[lh.mat_id], true);
@@ -128,11 +128,11 @@ __device__ inline float eval_p_hat(
 			  + 0.0722f*(float)ls.Le.z();
 
 	if (materials == nullptr)
-		return fmaxf(0.0f, lum * G);
+		return rmax(0.0f, lum * G);
 
 	vec3 f = gpu_f_dir(materials[gbuf.mat_id], gbuf.wo, wi, gbuf.normal);
 	float f_avg = (float)(f.x()+f.y()+f.z()) / 3.0f;
-	return fmaxf(0.0f, lum * G * f_avg);
+	return rmax(0.0f, lum * G * f_avg);
 }
 
 __device__ inline bool is_visible(
@@ -142,7 +142,7 @@ __device__ inline bool is_visible(
 	int tri_root, int n_tris
 ) {
 	vec3   d    = to - from;
-	double dist = d.length();
+	real dist = d.length();
 	if (dist < 1e-6) return true;
 	GpuHitRecord shadow;
 	return !hit_scene(hittables, n_hittables,

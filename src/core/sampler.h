@@ -1,6 +1,8 @@
 #pragma once
 
 #include <cstdint>
+#include <limits>
+#include "core/vec3.h"
 
 // Low-discrepancy sampling for the CPU integrators.
 //
@@ -62,7 +64,7 @@ struct SamplerState {
 	uint32_t pixel       = 0;
 	uint32_t index       = 0;
 	uint32_t dim         = 0;
-	double   pending     = 0.0;
+	real   pending     = 0.0;
 	bool     has_pending = false;
 };
 
@@ -78,7 +80,18 @@ inline void sampler_begin_sample(uint32_t pixel, uint32_t index) {
 
 inline void sampler_end_sample() { g_sampler.active = false; }
 
-inline double sampler_next() {
+// Samples must stay strictly below 1: callers scale them by a count and index
+// with the result, and in single precision the top of the 2^32 range rounds up
+// to exactly 1.0.
+inline real sampler_unit(uint32_t bits) {
+	const real inv32 = (real)2.3283064365386963e-10;   // 1 / 2^32
+	const real hi    = (real)1.0
+					 - (real)0.5*std::numeric_limits<real>::epsilon();
+	real x = (real)bits * inv32;
+	return x < hi ? x : hi;
+}
+
+inline real sampler_next() {
 	SamplerState& s = g_sampler;
 	if (s.has_pending) {
 		s.has_pending = false;
@@ -86,7 +99,6 @@ inline double sampler_next() {
 		return s.pending;
 	}
 
-	const double inv32 = 2.3283064365386963e-10;   // 1 / 2^32
 	uint32_t pair = s.dim >> 1;
 
 	// Shuffling the sample index per dimension pair is what decorrelates the
@@ -96,8 +108,8 @@ inline double sampler_next() {
 	uint32_t sx  = sampler_mix(s.pixel, pair * 2u + 1u);
 	uint32_t sy  = sampler_mix(s.pixel, pair * 2u + 2u);
 
-	double u = (double)sampler_owen(sampler_reverse_bits(idx), sx) * inv32;
-	double v = (double)sampler_owen(sampler_sobol2(idx, 0u),   sy) * inv32;
+	real u = sampler_unit(sampler_owen(sampler_reverse_bits(idx), sx));
+	real v = sampler_unit(sampler_owen(sampler_sobol2(idx, 0u),   sy));
 
 	s.pending     = v;
 	s.has_pending = true;

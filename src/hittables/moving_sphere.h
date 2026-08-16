@@ -13,9 +13,9 @@ public:
 	moving_sphere(
 		point3 cen0,
 		point3 cen1,
-		double _time0,
-		double _time1,
-		double r,
+		real _time0,
+		real _time1,
+		real r,
 		std::shared_ptr<material> m
 	) : center0(cen0),
 		center1(cen1),
@@ -25,7 +25,7 @@ public:
 		mat_ptr(m)
 	{}
 
-	point3 center(double time) const {
+	point3 center(real time) const {
 		return center0 +
 			   ((time - time0) / (time1 - time0)) *
 			   (center1 - center0);
@@ -69,8 +69,8 @@ public:
 	}
 
 	virtual bool bounding_box(
-		double _time0,
-		double _time1,
+		real _time0,
+		real _time1,
 		aabb& output_box
 	) const override {
 
@@ -91,8 +91,8 @@ public:
 
 public:
 	point3 center0, center1;
-	double time0, time1;
-	double radius;
+	real time0, time1;
+	real radius;
 	std::shared_ptr<material> mat_ptr;
 };
 

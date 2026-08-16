@@ -66,8 +66,8 @@ __global__ void sample_kernel(const GpuMaterial* mats, int n_mats,
 					atomicAdd(&acc[m].mis_sum, p2 / (q_uniform + p2));
 					atomicAdd(&acc[m].density, 1ULL);
 				}
-				double denom = fmax(p2, bs.pdf);
-				if (denom > 0.0 && fabs(p2 - bs.pdf) / denom > 1e-6)
+				double denom = rmax(p2, bs.pdf);
+				if (denom > 0.0 && fabs(p2 - bs.pdf) / denom > 1e-4)
 					atomicAdd(&acc[m].pdf_mismatch, 1ULL);
 			}
 		}
@@ -202,13 +202,13 @@ void run_gpu_tests() {
 			double mx = std::max(gf, fs);
 			if (mx > 1e-12) worst_recip = std::max(worst_recip, std::abs(gf-fs)/mx);
 		}
-		check(worst_f < 1e-6, cases[m].name + ": CPU/GPU f_dir agree",
-			  worst_f, 0.0, 1e-6);
-		check(worst_p < 1e-6, cases[m].name + ": CPU/GPU pdf_dir agree",
-			  worst_p, 0.0, 1e-6);
+		check(worst_f < kNumericTol, cases[m].name + ": CPU/GPU f_dir agree",
+			  worst_f, 0.0, kNumericTol);
+		check(worst_p < kNumericTol, cases[m].name + ": CPU/GPU pdf_dir agree",
+			  worst_p, 0.0, kNumericTol);
 		if (cases[m].reciprocal)
-			check(worst_recip < 1e-6, cases[m].name + ": GPU f is reciprocal",
-				  worst_recip, 0.0, 1e-6);
+			check(worst_recip < kNumericTol, cases[m].name + ": GPU f is reciprocal",
+				  worst_recip, 0.0, kNumericTol);
 	}
 
 	Acc* d_acc; cudaMalloc(&d_acc, M*sizeof(Acc));

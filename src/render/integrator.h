@@ -16,7 +16,7 @@ class Framebuffer;
 // the tile loop is parallel.
 struct BDPTSplatBuffer {
 	int W = 0, H = 0;
-	std::vector<double> data;
+	std::vector<real> data;
 
 	void resize(int w, int h) { W = w; H = h; data.assign((size_t)w*h*3, 0.0); }
 	void add(int x, int y, const color& c) {
