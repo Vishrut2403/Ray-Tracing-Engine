@@ -53,6 +53,7 @@ void Renderer::render(
 			for (int i = tile.x0; i < tile.x1; ++i) {
 				color pixel(0,0,0);
 				for (int s = 0; s < samples_per_pixel; ++s) {
+					sampler_begin_sample((uint32_t)(j*W + i), (uint32_t)s);
 					double u = (i + random_double()) / (W - 1);
 					double v = (j + random_double()) / (H - 1);
 					ray r = cam.get_ray(u, v);
@@ -65,6 +66,7 @@ void Renderer::render(
 
 					pixel += sample;
 				}
+				sampler_end_sample();
 				pixel /= double(samples_per_pixel);
 				buf[(j-tile.y0)*tw + (i-tile.x0)] = pixel;
 			}

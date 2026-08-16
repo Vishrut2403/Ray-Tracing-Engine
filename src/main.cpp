@@ -41,8 +41,13 @@ int main(int argc, char** argv)
 	RenderConfig config  = parse_cli(argc, argv);
 	bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
 	bool no_preview      = has_flag(argc, argv, "--no-preview");
-	bool use_ppm         = (config.feature == "ppm")
-						   || get_flag_value(argc, argv, "--integrator", "ppm");
+	// An explicit --integrator wins over the scene's own default.
+	bool pick_ppm        = get_flag_value(argc, argv, "--integrator", "ppm");
+	bool pick_other      = get_flag_value(argc, argv, "--integrator", "pt")
+						   || get_flag_value(argc, argv, "--integrator", "bdpt")
+						   || get_flag_value(argc, argv, "--integrator", "restir");
+	bool use_ppm         = pick_ppm
+						   || (config.feature == "ppm" && !pick_other);
 	bool use_denoise     = has_flag(argc, argv, "--denoise");
 	bool want_restir     = get_flag_value(argc, argv, "--integrator", "restir");
 

@@ -141,19 +141,29 @@ void test_phase(double g) {
 
 	const vec3 fwd(0, 0, 1);
 	const vec3 wo = -fwd;              // wo points back along the incoming ray
+
+	// Integrated by MIS against the phase function's own sampler. Uniform
+	// sphere sampling alone is too noisy for a forward-peaked lobe and made
+	// the g = 0.7 case fail intermittently.
+	const double q = 1.0 / (4.0 * pi);
 	double cnorm = 0.0, cmcos = 0.0, cscos = 0.0;
 	const int N = 200000;
 	for (int i = 0; i < N; ++i) {
 		vec3   wi = random_unit_vector();
 		double p  = iso.pdf_dir(wo, wi, rec);
-		cnorm += p;
-		cmcos += p * dot(fwd, wi);
+		cnorm += p / (q + p);
+		cmcos += p * dot(fwd, wi) / (q + p);
 
 		BSDFSample bs = iso.sample_dir(wo, rec);
+		double p2 = bs.pdf;
+		if (p2 > 0.0) {
+			cnorm += p2 / (q + p2);
+			cmcos += p2 * dot(fwd, bs.wi) / (q + p2);
+		}
 		cscos += dot(fwd, bs.wi);
 	}
-	cnorm = cnorm * 4.0 * pi / N;
-	cmcos = cmcos * 4.0 * pi / N;
+	cnorm /= N;
+	cmcos /= N;
 	cscos /= N;
 
 	check(std::abs(cnorm - 1.0) < 0.01, name + ": CPU phase integrates to 1",

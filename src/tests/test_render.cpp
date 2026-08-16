@@ -10,6 +10,7 @@
 #include "render/ppm_renderer.h"
 #include "render/framebuffer.h"
 #include "cuda/cuda_renderer.h"
+#include "io/denoiser.h"
 
 #include <cstdio>
 #include <cmath>
@@ -179,10 +180,10 @@ void test_ppm() {
 	check(r2 < 0.08, "ppm: agrees with BDPT", means[1], mb, 0.08);
 }
 
-// ReSTIR is a biased single-bounce estimator, so this is a sanity guard rather
-// than a correctness check: it catches black frames, NaNs and gross regressions
-// -- the failures that actually happen -- while tolerating the design bias,
-// which runs from ~0% (direct-lit scenes) to ~25% (strong multi-bounce GI).
+// ReSTIR is biased by design, so this is a guard rather than a correctness
+// check: it catches black frames, NaNs and gross regressions. The band is
+// tight enough to notice a repeat of the reservoir-weight clamp that used to
+// cost ~20% of the indirect light on diffuse scenes.
 void check_restir(const std::string& scene_name, int spp, int depth,
 				   double lo, double hi) {
 	const int W = 64, H = 64;
@@ -208,6 +209,77 @@ void check_restir(const std::string& scene_name, int spp, int depth,
 		  scene_name + ": ReSTIR within band of PT", ratio, 1.0, hi - 1.0);
 }
 
+// Nothing else here renders through --denoise, so a denoiser that shifted
+// energy would be invisible. The real question is whether it moves the image
+// closer to ground truth, not just whether it looks smoother -- a filter can
+// blur beautifully and still bias the result. So compare both against a
+// converged reference.
+void test_denoiser() {
+	const int W = 64, H = 64, depth = 8;
+
+	RenderConfig cfg;
+	cfg.feature = "cornell";
+	cfg.width = W; cfg.height = H; cfg.max_depth = depth;
+
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+
+	Framebuffer ref(W, H), noisy(W, H);
+	Renderer(1500, depth, 32).render(scene, ref,   cam, cfg.background);
+	Renderer(16,   depth, 32).render(scene, noisy, cam, cfg.background);
+
+	// Measured in display space, matching image_writer. In linear HDR the
+	// emitter dominates: 0.8% of pixels at radiance ~30 swamp the squared
+	// error, and blurring their edges hides a large gain everywhere else.
+	auto encode = [](double x) {
+		const double a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
+		double t = (x*(a*x+b)) / (x*(c*x+d)+e);
+		t = t < 0.0 ? 0.0 : (t > 1.0 ? 1.0 : t);
+		return std::pow(t, 1.0/2.2);
+	};
+	auto rmse_vs_ref = [&](const Framebuffer& f) {
+		double acc = 0.0;
+		for (int j = 0; j < H; ++j)
+			for (int i = 0; i < W; ++i) {
+				color a = f.get(i,j), b = ref.get(i,j);
+				for (int k = 0; k < 3; ++k) {
+					double diff = encode(a[k]) - encode(b[k]);
+					acc += diff*diff;
+				}
+			}
+		return std::sqrt(acc / (W*H*3));
+	};
+
+	double mean_before = measure(noisy, W, H).mean;
+	double rmse_before = rmse_vs_ref(noisy);
+
+	OIDNDenoiser::denoise(noisy);
+
+	double mean_after = measure(noisy, W, H).mean;
+	double rmse_after = rmse_vs_ref(noisy);
+
+	bool finite = true, nonneg = true;
+	for (int j = 0; j < H; ++j)
+		for (int i = 0; i < W; ++i) {
+			color c = noisy.get(i,j);
+			for (int k = 0; k < 3; ++k) {
+				if (!std::isfinite(c[k])) finite = false;
+				if (c[k] < -1e-6)         nonneg = false;
+			}
+		}
+
+	check(finite, "denoiser: output is finite", 1.0, 1.0, 0.0);
+	check(nonneg, "denoiser: output is non-negative", 1.0, 1.0, 0.0);
+
+	double rel = std::abs(mean_after - mean_before)
+			   / std::max(mean_before, 1e-9);
+	check(rel < 0.05, "denoiser: preserves mean energy",
+		  mean_after, mean_before, 0.05);
+	check(rmse_after < 0.8 * rmse_before,
+		  "denoiser: moves image closer to reference",
+		  rmse_after, rmse_before, 0.0);
+}
+
 } // namespace
 
 void run_render_tests() {
@@ -226,7 +298,9 @@ void run_render_tests() {
 	test_closed_furnace();
 	test_ppm();
 
-	check_restir("cornell", 300, 10, 0.65, 1.15);
-	check_restir("glass",   300, 10, 0.65, 1.15);
-	check_restir("ggx",     300, 10, 0.65, 1.15);
+	check_restir("cornell", 300, 10, 0.88, 1.15);
+	check_restir("glass",   300, 10, 0.88, 1.15);
+	check_restir("ggx",     300, 10, 0.88, 1.15);
+
+	test_denoiser();
 }
