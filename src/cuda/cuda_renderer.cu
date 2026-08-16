@@ -187,6 +187,15 @@ void cuda_render(const Scene& scene,
 		return;
 	}
 
+	// ReSTIR shades from a G-buffer, so primary rays never sample the medium
+	// and a participating-medium scene comes out far too dark. Fall back rather
+	// than return a wrong image.
+	if (integrator == GpuIntegrator::RESTIR && gpu_scene.medium.active) {
+		printf("[note] ReSTIR does not support participating media; "
+			   "using the path tracer\n");
+		integrator = GpuIntegrator::PATH_TRACER;
+	}
+
 	// ── Path tracer (default) ─────────────────────────────────────────────────
 	if (integrator == GpuIntegrator::PATH_TRACER) {
 		printf("[CUDA/PT] %dx%d spp=%d depth=%d\n", W, H, spp, max_depth);

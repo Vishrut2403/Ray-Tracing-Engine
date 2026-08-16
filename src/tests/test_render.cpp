@@ -179,6 +179,35 @@ void test_ppm() {
 	check(r2 < 0.08, "ppm: agrees with BDPT", means[1], mb, 0.08);
 }
 
+// ReSTIR is a biased single-bounce estimator, so this is a sanity guard rather
+// than a correctness check: it catches black frames, NaNs and gross regressions
+// -- the failures that actually happen -- while tolerating the design bias,
+// which runs from ~0% (direct-lit scenes) to ~25% (strong multi-bounce GI).
+void check_restir(const std::string& scene_name, int spp, int depth,
+				   double lo, double hi) {
+	const int W = 64, H = 64;
+
+	RenderConfig cfg;
+	cfg.feature = scene_name;
+	cfg.width = W; cfg.height = H;
+	cfg.samples = spp; cfg.max_depth = depth;
+
+	Scene  scene = SceneFactory::build(scene_name);
+	camera cam   = CameraFactory::build(cfg);
+	Framebuffer fb_pt(W, H), fb_rs(W, H);
+
+	Renderer(spp, depth, 32).render(scene, fb_pt, cam, cfg.background);
+	cuda_render(scene, fb_rs, cam, cfg.background, spp, depth,
+				nullptr, scene_name, GpuIntegrator::RESTIR);
+
+	Stats p = measure(fb_pt, W, H), r = measure(fb_rs, W, H);
+	double ratio = p.mean > 1e-9 ? r.mean / p.mean : 0.0;
+
+	check(r.mean > 0.01, scene_name + ": ReSTIR not black", r.mean, 1.0, 0.0);
+	check(ratio > lo && ratio < hi,
+		  scene_name + ": ReSTIR within band of PT", ratio, 1.0, hi - 1.0);
+}
+
 } // namespace
 
 void run_render_tests() {
@@ -190,6 +219,14 @@ void run_render_tests() {
 	compare_integrators("cornell", 320, 10, 0.03);
 	compare_integrators("glass",   320, 10, 0.03);
 
+	// caustics defaults to BDPT on both backends, so this is the only check
+	// that exercises the GPU BDPT kernels.
+	compare_scene("caustics", 256, 12, 0.05);
+
 	test_closed_furnace();
 	test_ppm();
+
+	check_restir("cornell", 300, 10, 0.65, 1.15);
+	check_restir("glass",   300, 10, 0.65, 1.15);
+	check_restir("ggx",     300, 10, 0.65, 1.15);
 }

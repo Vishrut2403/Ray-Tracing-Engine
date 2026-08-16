@@ -189,7 +189,13 @@ static void test_ggx_energy_compensation() {
 	}
 }
 
-int main() {
+int main(int argc, char** argv) {
+	// The render checks drive both backends and dominate the runtime; --quick
+	// keeps the analytic ones for the edit/build loop.
+	bool quick = false;
+	for (int i = 1; i < argc; ++i)
+		if (std::string(argv[i]) == "--quick") quick = true;
+
 	std::printf("BSDF analytic checks\n");
 
 	const vec3 n(0,0,1);
@@ -256,7 +262,7 @@ int main() {
 
 	run_gpu_tests();
 	run_medium_tests();
-	run_render_tests();
+	if (!quick) run_render_tests();
 
 	std::printf("%d checks, %d failed\n", g_checks, g_failures);
 	return g_failures == 0 ? 0 : 1;
