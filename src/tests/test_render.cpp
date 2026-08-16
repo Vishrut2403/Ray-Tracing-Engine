@@ -7,6 +7,7 @@
 #include "scenes/scene_factory.h"
 #include "core/camera_factory.h"
 #include "render/renderer.h"
+#include "render/ppm_renderer.h"
 #include "render/framebuffer.h"
 #include "cuda/cuda_renderer.h"
 
@@ -72,6 +73,112 @@ void compare_scene(const std::string& scene_name, int spp, int depth,
 		  c.upper_half, g.upper_half, tol);
 }
 
+// Path tracing vs BDPT on the same scene. These are independent estimators --
+// different path construction, different MIS weights -- so agreement is real
+// evidence of correctness, unlike CPU/GPU agreement on a shared algorithm.
+//
+// Not every scene qualifies: BDPT has no participating-medium support, and on
+// caustics PT converges too slowly through specular chains to compare at a
+// sane sample count (measured ~8% low, concentrated in the caustic itself).
+void compare_integrators(const std::string& scene_name, int spp, int depth,
+						  double tol) {
+	// Lower resolution rather than fewer samples: the comparison is on image
+	// means, whose noise depends on the total sample count.
+	const int W = 64, H = 64;
+
+	RenderConfig cfg;
+	cfg.feature = scene_name;
+	cfg.width = W; cfg.height = H;
+	cfg.samples = spp; cfg.max_depth = depth;
+
+	camera cam = CameraFactory::build(cfg);
+	Framebuffer fb_pt(W, H), fb_bd(W, H);
+	Renderer renderer(spp, depth, 32);
+
+	Scene s_pt = SceneFactory::build(scene_name);
+	s_pt.use_bdpt = false;
+	renderer.render(s_pt, fb_pt, cam, cfg.background);
+
+	Scene s_bd = SceneFactory::build(scene_name);
+	s_bd.use_bdpt = true;
+	renderer.render(s_bd, fb_bd, cam, cfg.background);
+
+	Stats a = measure(fb_pt, W, H), b = measure(fb_bd, W, H);
+	auto rel = [](double x, double y) {
+		double m = std::max(std::abs(x), std::abs(y));
+		return m > 1e-9 ? std::abs(x - y) / m : 0.0;
+	};
+
+	check(rel(a.mean, b.mean) < tol, scene_name + ": PT/BDPT mean agree",
+		  a.mean, b.mean, tol);
+	check(rel(a.lower_half, b.lower_half) < tol,
+		  scene_name + ": PT/BDPT top half agree",
+		  a.lower_half, b.lower_half, tol);
+	check(rel(a.upper_half, b.upper_half) < tol,
+		  scene_name + ": PT/BDPT bottom half agree",
+		  a.upper_half, b.upper_half, tol);
+}
+
+// Closed enclosure with emitting, reflecting walls: L = Le/(1-rho) exactly.
+// The open furnace scene is a convex sphere and validates a single bounce; this
+// one pins the whole multi-bounce chain against a closed form.
+void test_closed_furnace() {
+	const int W = 48, H = 48, spp = 400, depth = 30;
+
+	RenderConfig cfg;
+	cfg.feature = "closed_furnace";
+	cfg.width = W; cfg.height = H;
+	cfg.samples = spp; cfg.max_depth = depth;
+
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+	Framebuffer fb(W, H);
+	Renderer(spp, depth, 32).render(scene, fb, cam, cfg.background);
+
+	Stats st = measure(fb, W, H);
+	check(std::abs(st.mean - 1.0) < 0.01,
+		  "closed furnace: L = Le/(1-rho) = 1", st.mean, 1.0, 0.01);
+	check(std::abs(st.lower_half - 1.0) < 0.015,
+		  "closed furnace: top half = 1", st.lower_half, 1.0, 0.015);
+	check(std::abs(st.upper_half - 1.0) < 0.015,
+		  "closed furnace: bottom half = 1", st.upper_half, 1.0, 0.015);
+}
+
+// PPM normalises by every photon ever emitted, so its result must not depend on
+// the iteration count -- more passes mean less noise, not more light. It is
+// also a third estimator, independent of both PT and BDPT.
+void test_ppm() {
+	const int W = 48, H = 48, depth = 10;
+
+	RenderConfig cfg;
+	cfg.feature = "cornell";
+	cfg.width = W; cfg.height = H; cfg.max_depth = depth;
+	camera cam = CameraFactory::build(cfg);
+
+	double means[2];
+	const int iters[2] = { 6, 18 };
+	for (int k = 0; k < 2; ++k) {
+		Scene scene = SceneFactory::build(cfg.feature);
+		Framebuffer fb(W, H);
+		PPMRenderer(iters[k], 150000, depth, 45.0, 0.7)
+			.render(scene, fb, cam, cfg.background);
+		means[k] = measure(fb, W, H).mean;
+	}
+	double rel = std::abs(means[0] - means[1])
+			   / std::max(means[0], means[1]);
+	check(rel < 0.06, "ppm: invariant to iteration count",
+		  means[0], means[1], 0.06);
+
+	Scene s_bd = SceneFactory::build(cfg.feature);
+	s_bd.use_bdpt = true;
+	Framebuffer fb_bd(W, H);
+	Renderer(400, depth, 32).render(s_bd, fb_bd, cam, cfg.background);
+	double mb = measure(fb_bd, W, H).mean;
+
+	double r2 = std::abs(means[1] - mb) / std::max(means[1], mb);
+	check(r2 < 0.08, "ppm: agrees with BDPT", means[1], mb, 0.08);
+}
+
 } // namespace
 
 void run_render_tests() {
@@ -79,4 +186,10 @@ void run_render_tests() {
 	// volume is the one that exercises the medium transport path on both sides.
 	compare_scene("volume",  192, 12, 0.04);
 	compare_scene("cornell", 128, 10, 0.04);
+
+	compare_integrators("cornell", 320, 10, 0.03);
+	compare_integrators("glass",   320, 10, 0.03);
+
+	test_closed_furnace();
+	test_ppm();
 }

@@ -41,7 +41,8 @@ int main(int argc, char** argv)
 	RenderConfig config  = parse_cli(argc, argv);
 	bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
 	bool no_preview      = has_flag(argc, argv, "--no-preview");
-	bool use_ppm         = (config.feature == "ppm");
+	bool use_ppm         = (config.feature == "ppm")
+						   || get_flag_value(argc, argv, "--integrator", "ppm");
 	bool use_denoise     = has_flag(argc, argv, "--denoise");
 	bool want_restir     = get_flag_value(argc, argv, "--integrator", "restir");
 
@@ -51,8 +52,8 @@ int main(int argc, char** argv)
 	// The GPU covers only a subset of scenes. An unknown name used to fall
 	// through to a Cornell box and look like it worked; say so and use the CPU.
 	if (use_gpu && use_ppm) {
-		std::cerr << "[note] scene 'ppm' is progressive photon mapping, "
-					 "which is CPU-only; ignoring --device gpu\n";
+		std::cerr << "[note] progressive photon mapping is CPU-only; "
+					 "ignoring --device gpu\n";
 		use_gpu = false;
 	} else if (use_gpu && !cuda_supports_scene(config.feature)) {
 		std::cerr << "[note] scene '" << config.feature
@@ -64,6 +65,10 @@ int main(int argc, char** argv)
 											   : GpuIntegrator::PATH_TRACER;
 
 	Scene  scene = SceneFactory::build(config.feature);
+	// Scenes carry a default integrator; --integrator overrides it so the same
+	// scene can be rendered by independent estimators and compared.
+	if      (get_flag_value(argc, argv, "--integrator", "bdpt")) scene.use_bdpt = true;
+	else if (get_flag_value(argc, argv, "--integrator", "pt"))   scene.use_bdpt = false;
 	camera cam   = CameraFactory::build(config);
 	Framebuffer fb(config.width, config.height);
 

@@ -10,6 +10,7 @@
 #include "hittables/hittable.h"
 #include "textures/texture.h"
 #include "materials/bsdf_sample.h"
+#include "materials/ggx_energy.h"
 
 class material {
 public:
@@ -272,9 +273,11 @@ private:
 		double Dval = D(ndoth, a);
 		double Gval = G2(ndotv, ndotl, a);
 
+		color  f0 = color(0.04,0.04,0.04)*(1.0-metallic) + base_color*metallic;
 		color specular = Fval * (Dval * Gval / (4.0 * ndotv * ndotl));
+		color ms       = ggx_ms_brdf(f0, roughness, ndotv, ndotl);
 		color diffuse  = base_color / pi * (1.0 - metallic) * (color(1,1,1) - Fval);
-		return specular + diffuse;
+		return specular + ms + diffuse;
 	}
 
 	static vec3 sample_vndf(const vec3& wo, double a) {

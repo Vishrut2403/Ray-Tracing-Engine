@@ -11,6 +11,11 @@ public:
 						  90.0, double(config.width)/config.height,
 						  0.0, 3.0, 0.0, 1.0);
 
+		if (config.feature == "closed_furnace")
+			return camera(point3(278,278,278), point3(278,278,554), vec3(0,1,0),
+						  60.0, double(config.width)/config.height,
+						  0.0, 276.0, 0.0, 1.0);
+
 		if (config.feature == "ggx" || config.feature == "hdr")
 			return camera(point3(0,0.3,7), point3(0,0.3,0), vec3(0,1,0),
 						  65.0, double(config.width)/config.height,

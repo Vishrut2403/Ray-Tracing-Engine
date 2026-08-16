@@ -105,7 +105,8 @@ void PPMRenderer::render(
 		}
 	}
 
-	color photon_flux = Le_light * light_area / (double)photons_per_iter;
+	color photon_flux =
+		Le_light * light_area * pi_val / (double)photons_per_iter;
 
 	std::cerr << "[PPM] light area=" << light_area
 			  << " Le=(" << Le_light.x() << "," << Le_light.y() << ","
@@ -254,7 +255,7 @@ void PPMRenderer::render(
 
 		if (px.vp.valid&&px.N>0){
 			double area=pi_val*px.R*px.R;
-			L=L+px.tau/area;
+			L=L+px.tau/(area*(double)n_iterations);
 		}
 
 		fb.set(i,j,L);

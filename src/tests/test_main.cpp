@@ -155,6 +155,40 @@ static void test_reflectance(const std::string& name,
 	}
 }
 
+// Kulla-Conty compensation: without it single-scattering GGX keeps only ~31%
+// of the energy at roughness 1. The bound is loose at grazing, where the
+// approximation is known to under-compensate.
+static void test_ggx_energy_compensation() {
+	const vec3 n(0,0,1);
+	hit_record rec = make_rec(n);
+	onb uvw; uvw.build_from_w(n);
+
+	for (double r : { 0.05, 0.2, 0.4, 0.6, 0.8, 1.0 }) {
+		ggx m(color(1,1,1), r, 1.0);
+		for (double ct : { 0.9, 0.6, 0.3, 0.15 }) {
+			double st = std::sqrt(std::max(0.0, 1.0 - ct*ct));
+			vec3   wo = unit_vector(uvw.local(vec3(st, 0.0, ct)));
+
+			double sum = 0.0;
+			const int N = 200000;
+			for (int i = 0; i < N; ++i) {
+				BSDFSample bs = m.sample_dir(wo, rec);
+				if (bs.pdf <= 0.0) continue;
+				sum += lum(bs.f) * std::abs(dot(n, bs.wi)) / bs.pdf;
+			}
+			double rho = sum / N;
+
+			char tag[80];
+			std::snprintf(tag, sizeof(tag),
+						  "ggx energy [rough %.2f cos %.2f]", r, ct);
+			check(rho >= 0.78, std::string(tag) + ": >= 0.78 (multiscatter)",
+				  rho, 1.0, 0.22);
+			check(rho <= 1.0 + 5e-3, std::string(tag) + ": <= 1 (no gain)",
+				  rho, 1.0, 5e-3);
+		}
+	}
+}
+
 int main() {
 	std::printf("BSDF analytic checks\n");
 
@@ -217,6 +251,8 @@ int main() {
 		                      c.front_face);
 		if (c.reciprocal) test_reciprocity(c.name, c.mat, n);
 	}
+
+	test_ggx_energy_compensation();
 
 	run_gpu_tests();
 	run_medium_tests();

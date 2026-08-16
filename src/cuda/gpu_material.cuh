@@ -6,6 +6,7 @@
 #include "cuda/gpu_scene.cuh"
 #include "cuda/gpu_hit.cuh"
 #include "cuda/cuda_rand.cuh"
+#include "materials/ggx_energy.h"
 
 struct GpuBSDFSample {
 	vec3   wi;
@@ -63,9 +64,10 @@ __device__ inline vec3 ggx_brdf(const GpuMaterial& mat,
 	double G = ggx_G2(ndotv, ndotl, a);
 
 	vec3 specular = F * (D * G / (4.0 * ndotv * ndotl));
+	vec3 ms       = ggx_ms_brdf(f0, (double)mat.roughness, ndotv, ndotl);
 	vec3 diffuse  = mat.albedo / GPU_PI * (1.0-(double)mat.metallic)
 				  * (vec3(1,1,1) - F);
-	return specular + diffuse;
+	return specular + ms + diffuse;
 }
 
 __device__ inline vec3 ggx_sample_vndf(const vec3& wo, double a, curandState* rng) {
