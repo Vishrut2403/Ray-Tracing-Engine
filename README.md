@@ -1,6 +1,8 @@
 # Ray Tracing Engine
 
-A physically-based CPU/CUDA path tracer written in C++, originally following *Ray Tracing: The Next Week* by Peter Shirley, then significantly extended with production rendering techniques — MIS, NEE, a full BSDF interface, and a CUDA GPU backend achieving a 13.4× speedup over the CPU renderer.
+A physically-based CPU/CUDA renderer written in C++, originally following *Ray Tracing: The Next Week* by Peter Shirley and since rebuilt around production techniques: a GGX microfacet BSDF with energy compensation, MIS/NEE, four independent integrators (path tracing, BDPT, progressive photon mapping, ReSTIR DI+GI), HDR environment lighting, glTF meshes, and a CUDA backend that runs the same shading model as the CPU.
+
+Correctness is the point of the project. Every integrator is cross-checked against the others and against both backends by a 295-check test suite.
 
 ---
 
@@ -33,56 +35,68 @@ A physically-based CPU/CUDA path tracer written in C++, originally following *Ra
 
 ## Features
 
-### Core Rendering
-- Iterative path tracing integrator — no recursion, no stack overflow
-- Physically-based throughput accumulation (`beta`)
-- Next Event Estimation (direct lighting via shadow rays)
-- Multiple Importance Sampling with symmetric power heuristic
-- Russian roulette path termination after depth 3
-- Solid-angle PDF conversion for area lights
+### Integrators
+- **Path tracing** — iterative, no recursion; NEE plus BSDF sampling combined with the MIS power heuristic; Russian roulette after depth 3. CPU and GPU.
+- **Bidirectional path tracing** — Veach-style, full MIS over all connection strategies including light tracing (`t == 1`) splats. CPU and GPU.
+- **Progressive photon mapping** — for specular-to-diffuse transport the other integrators sample poorly. CPU only.
+- **ReSTIR DI + GI** — spatiotemporal reservoir resampling from a G-buffer. GPU only, and approximate: its GI is a biased single-bounce estimator, so it is the fast preview mode rather than the reference.
+
+Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaults to BDPT).
 
 ### Materials
-- Lambertian diffuse with cosine-weighted importance sampling
-- Metal with configurable roughness fuzz
-- Dielectric glass with Schlick Fresnel approximation
+- **GGX microfacet** metal/dielectric with VNDF sampling, Smith height-correlated masking-shadowing, and Kulla–Conty multiple-scattering energy compensation — Smith GGX drops ~65% of the second-bounce energy at roughness 1, which this adds back
+- **Rough dielectric** microfacet transmission (Walter et al. 2007)
+- Lambertian diffuse, smooth metal, smooth dielectric with Schlick Fresnel
 - Diffuse area lights
-- Isotropic participating media (constant density volumes)
+- Homogeneous participating media (Henyey–Greenstein phase function), and a subsurface material
 
-### Acceleration
-- BVH with axis-aligned bounding boxes
-- Center-priority tile ordering for progressive refinement
-- OpenMP multithreading across tiles
+### Lighting and Geometry
+- HDR environment maps with 2D CDF importance sampling
+- glTF and OBJ mesh loading, with a triangle BVH
+- Perlin noise, image, and checker textures
+- Spheres, boxes, axis-aligned rects, moving spheres, transforms, constant-density media
 
-### CUDA Backend
-- Full path tracing kernel (`__global__` `Li()`) — one thread per pixel
-- Per-thread `curandState` for independent random streams
-- Flat scene representation — tagged unions replace virtual dispatch
-- Baked `rotate_y` + `translate` transforms per hittable
-- Batch accumulation with `cudaMemcpyAsync` and dedicated stream
-- Progressive preview via OpenGL between batches
+### Sampling and Precision
+- Owen-scrambled (0,2)-sequence low-discrepancy sampler on the CPU (the GPU still uses cuRAND white noise)
+- Single precision throughout by default — FP64 runs at 1/64 rate on consumer NVIDIA parts, and single precision is ~4× faster on the GPU here at no measurable cost in accuracy. Build with `-DRT_DOUBLE=ON` for a double-precision reference.
 
-### Infrastructure
-- Live OpenGL preview window with gamma-correct display
-- PPM image output
-- Dual backend: `--device cpu` / `--device gpu`
-- Headless mode: `--no-preview`
-- Full CLI control over all render parameters
-- Furnace test scene for energy conservation validation
+### Acceleration and Infrastructure
+- BVH over both hittables and triangles
+- OpenMP across center-priority tiles, for progressive refinement from the middle out
+- Intel Open Image Denoise via `--denoise`
+- PPM output, or linear HDR OpenEXR — the writer is chosen by the output extension
+- Live OpenGL preview that applies the same tonemap as the file writer, so what you see is what gets saved
+- ACES filmic tonemap with a firefly clamp at luminance 20
 
 ---
 
 ## Benchmark
 
-| Scene | Backend | Resolution | SPP | Time | Speedup |
-|:---|:---:|:---:|:---:|:---:|:---:|
-| Cornell Box | CPU (OpenMP) | 600×600 | 400 | 264s | 1× |
-| Cornell Box | GPU (CUDA) | 600×600 | 400 | 19.7s | **13.4×** |
-| Cornell Box | GPU (CUDA) | 800×800 | 1024 | 86s | — |
-| Cornell HQ | GPU (CUDA) | 1200×1200 | 4096 | 780s | — |
+256×256, 64 spp, depth 10, `--no-preview`, path tracer. Wall clock end to end — scene build, render, and image write. GPU best of 3, CPU best of 2.
+
+| Scene | CPU | GPU | Speedup |
+|:---|---:|---:|---:|
+| furnace | 1.15s | 0.20s | 5.8× |
+| ggx | 2.00s | 0.24s | 8.4× |
+| hdr | 2.08s | 0.31s | 6.7× |
+| glass | 2.50s | 0.28s | 8.8× |
+| closed_furnace | 4.10s | — | CPU only |
+| sss | 5.55s | 0.30s | 18.4× |
+| cornell | 5.83s | 0.31s | 18.7× |
+| bunny | 10.61s | 5.22s | 2.0× |
+| volume | 11.49s | 0.42s | 27.7× |
+| helmet | 14.54s | — | CPU only |
+| caustics | 31.07s | 1.22s | 25.4× |
+
+`bunny`'s 2× is misleading: its GPU render takes 0.20s and the remaining 5.0s is glTF parsing, BVH construction, and upload — single-threaded CPU work that happens before a ray is cast. Same for `helmet`. Excluding scene build, cornell is 0.12s and caustics 1.03s on the GPU.
+
+The preview window costs ~0.34s of one-time GL context creation plus roughly 5–8% of a CPU render; on the GPU it is free.
 
 **Hardware:**
-- CPU: AMD Ryzen 7 5800 (8 cores / 16 threads)
+- CPU: AMD Ryzen 7 5800H (8 cores / 16 threads)
 - GPU: NVIDIA RTX 3060 6GB Laptop — CUDA 13.1, sm\_86
+
+CPU timings on this laptop vary ±10% with thermal state; treat differences under ~15% as noise.
 
 ---
 
@@ -90,7 +104,7 @@ A physically-based CPU/CUDA path tracer written in C++, originally following *Ra
 
 ### Dependencies
 ```bash
-sudo pacman -S cmake gcc openmp glfw
+sudo pacman -S cmake gcc openmp glfw openimagedenoise
 ```
 
 ### CUDA Toolkit (~3GB)
@@ -131,9 +145,18 @@ cmake -S . -B build
 cmake --build build
 ```
 
+Double-precision reference build:
+
+```bash
+cmake -S . -B build-double -DRT_DOUBLE=ON
+cmake --build build-double
+```
+
 ---
 
 ## Usage
+
+Arguments are positional: `render <output> [scene] [flags]`. The output extension picks the writer — `.exr` gives linear HDR, anything else is tonemapped PPM.
 
 ```bash
 # CPU render with live preview
@@ -145,31 +168,55 @@ cmake --build build
 # Headless GPU render (fastest)
 ./build/render output.ppm cornell --spp 1024 --width 1200 --height 1200 --device gpu --no-preview
 
+# Caustics through bidirectional path tracing
+./build/render caustics.ppm caustics --integrator bdpt --no-preview
+
+# Photon mapping, with denoising
+./build/render ppm.ppm ppm --integrator ppm --denoise --no-preview
+
+# Linear HDR output, for grading elsewhere
+./build/render output.exr cornell --spp 512 --device gpu --no-preview
+
 # Energy conservation validation
 ./build/render furnace.ppm furnace --no-preview
 ```
 
-**All CLI flags:**
+**Flags:**
 
-| Flag | Default | Description |
-|:---|:---:|:---|
-| `--width N` | 400 | Image width in pixels |
-| `--height N` | 400 | Image height in pixels |
-| `--spp N` | 64 | Samples per pixel |
-| `--depth N` | 10 | Maximum ray bounce depth |
-| `--tile N` | 32 | Tile size (CPU only) |
-| `--device cpu/gpu` | cpu | Render backend |
-| `--no-preview` | off | Disable OpenGL preview window |
+| Flag | Short | Default | Description |
+|:---|:---:|:---:|:---|
+| `--width N` | `-w` | 400 | Image width in pixels |
+| `--height N` | `-h` | 400 | Image height in pixels |
+| `--spp N` | `-s` | 64 | Samples per pixel |
+| `--depth N` | `-d` | 10 | Maximum ray bounce depth |
+| `--tile N` | `-t` | 32 | Tile size (CPU only) |
+| `--device cpu\|gpu` | | cpu | Render backend |
+| `--integrator pt\|bdpt\|ppm\|restir` | | per scene | Override the scene's integrator |
+| `--denoise` | | off | Run Open Image Denoise on the result |
+| `--no-preview` | | off | Headless; no OpenGL window |
+
+**Scenes:** `cornell`, `furnace`, `closed_furnace`, `ggx`, `hdr`, `bunny`, `glass`, `caustics`, `helmet`, `ppm`, `sss`, `volume`.
+
+The GPU implements `cornell`, `furnace`, `ggx`, `hdr`, `bunny`, `glass`, `caustics`, `volume`, and `sss`; anything else falls back to the CPU with a note. Progressive photon mapping is CPU-only.
 
 ---
 
 ## Validation
 
-Energy conservation verified via furnace test — a single lambertian sphere (albedo = 0.5) rendered in a uniform white environment with no area lights. Under correct energy conservation every pixel must converge to linear 0.5 regardless of the number of bounces.
+```bash
+./build/tests
+```
 
-- Expected: linear 0.5 → gamma-corrected PPM value ≈ 181
-- Measured: linear avg = 0.507, error = 0.007
-- Pass threshold: < 0.01 ✓
+295 checks covering:
+
+- **Analytic BSDF identities** — white furnace (`E[f·cos/pdf]` matches the known albedo and never exceeds 1), Helmholtz reciprocity, PDF normalization, and the `f·cos/pdf = G2/G1` cancellation for VNDF sampling
+- **Energy conservation** — the closed furnace, where `L = Le/(1-rho)` must converge to exactly 1 across the whole image, catches throughput and PDF bugs that the open furnace misses
+- **Cross-backend agreement** — CPU and GPU means must agree on `cornell`, `glass`, and `ggx`
+- **Cross-integrator agreement** — PT against BDPT, and PPM against BDPT; three independent estimators of the same integral disagreeing means at least one is wrong
+- **Photon mapping invariants** — the result must not depend on the iteration count
+- **Denoiser** — output finite, non-negative, and energy-preserving
+
+Bounds are self-calibrating: Monte Carlo checks derive their tolerance from the estimator's own standard error rather than a fixed margin, so they neither pass trivially nor fail at random. Numeric tolerances scale off `std::numeric_limits<real>::epsilon()`, so the suite is meaningful in both the float and double builds.
 
 ---
 
@@ -184,20 +231,29 @@ Extended beyond the book:
 | Recursive scatter → iterative `Li()` | No stack overflow, GPU-portable |
 | Scatter/attenuation → `f / sample / pdf / emitted` BSDF interface | Correct MIS requires separate eval and sample |
 | Single-bounce direct → NEE + MIS power heuristic | Lower variance, correct weighting |
+| Schlick-only dielectrics → GGX microfacet with Kulla–Conty compensation | The book's materials lose energy and cannot represent rough metal |
 | `shared_ptr` scene → flat tagged-union arrays | Required for CUDA device code |
-| CPU-only → dual CPU/CUDA backend | 13.4× speedup on RTX 3060 |
-| Energy conservation validation added | Catches PDF/throughput bugs before they show visually |
+| CPU-only → dual CPU/CUDA backend | Up to 27× here, with identical shading on both |
+| One integrator → PT, BDPT, PPM, ReSTIR | Caustics and SDS paths need estimators the book's approach cannot reach |
+| Double → single precision, with a double build kept as reference | 4× on the GPU; the double build is how the float build is checked |
+| White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
+| Ad-hoc eyeballing → 295-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
 
 ## Roadmap
 
-- [ ] GGX microfacet BRDF with Smith masking-shadowing
-- [ ] HDR environment map with 2D CDF importance sampling
-- [ ] Rough dielectric (microfacet transmission)
-- [ ] EXR output via tinyexr
-- [ ] OBJ / glTF scene loading
+- [x] GGX microfacet BRDF with Smith masking-shadowing
+- [x] HDR environment map with 2D CDF importance sampling
+- [x] Rough dielectric (microfacet transmission)
+- [x] OBJ / glTF scene loading
+- [x] Bidirectional path tracing (BDPT)
+- [x] Progressive photon mapping
+- [x] ReSTIR direct and indirect lighting
+- [x] EXR output via tinyexr
+- [ ] Port the low-discrepancy sampler to the GPU (still cuRAND white noise there)
+- [ ] Fixed per-bounce sampler dimension allocation, replacing the global counter
+- [ ] Profile and cut the CPU hot path (virtual dispatch through `shared_ptr` per intersection)
 - [ ] OptiX backend (hardware RT cores)
-- [ ] Bidirectional path tracing (BDPT)
 - [ ] Light trees for many-light scenes
 - [ ] Spectral rendering (hero wavelength)
