@@ -14,8 +14,10 @@
 #include <atomic>
 #include <mutex>
 #include <cstring>
+#include <functional>
 #include <iostream>
 #include <string>
+#include <vector>
 
 static bool has_flag(int argc, char** argv, const char* flag) {
 	for (int i = 1; i < argc; ++i)
@@ -34,6 +36,35 @@ static bool get_flag_value(int argc, char** argv,
 static bool ends_with(const std::string& s, const std::string& suffix) {
 	return s.size() >= suffix.size() &&
 		   s.compare(s.size()-suffix.size(), suffix.size(), suffix) == 0;
+}
+
+// The lock is held for the snapshot copy only: drawing under it stalls every
+// render thread until the compositor accepts the frame, which on Wayland never
+// happens while the window is hidden.
+static void render_with_preview(Framebuffer& fb, int width, int height,
+								const std::function<void()>& render) {
+	PreviewWindow preview(width, height);
+	std::atomic<bool> done{false};
+	std::thread render_thread([&]() { render(); done = true; });
+
+	std::vector<float> snapshot((size_t)width * height * 3, 0.0f);
+	bool have_final = false;
+	while (!preview.should_close()) {
+		if (!have_final) {
+			// Sampled before the copy, so the copy that follows a true reading
+			// is the final image.
+			bool finished = done;
+			{
+				std::lock_guard<std::mutex> lock(fb.mtx);
+				std::memcpy(snapshot.data(), fb.raw_data(),
+							snapshot.size() * sizeof(float));
+			}
+			have_final = finished;
+		}
+		preview.update(snapshot.data());
+		preview.wait_events(1.0/30.0);
+	}
+	render_thread.join();
 }
 
 int main(int argc, char** argv)
@@ -88,40 +119,19 @@ int main(int argc, char** argv)
 		ppm.render(scene, fb, cam, config.background);
 
 	} else if (use_gpu) {
-		if (no_preview) {
+		auto go = [&](bool stage_frames) {
 			cuda_render(scene, fb, cam, config.background,
 						config.samples, config.max_depth,
-						nullptr, config.feature, gpu_integrator);
-		} else {
-			PreviewWindow preview(config.width, config.height);
-			std::thread render_thread([&]() {
-				cuda_render(scene, fb, cam, config.background,
-							config.samples, config.max_depth,
-							&preview, config.feature, gpu_integrator);
-			});
-			while (!preview.should_close()) {
-				preview.poll_events();
-				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview.update(fb.raw_data());
-			}
-			render_thread.join();
-		}
+						stage_frames, config.feature, gpu_integrator);
+		};
+		if (no_preview) go(false);
+		else render_with_preview(fb, config.width, config.height,
+								 [&]() { go(true); });
 	} else {
 		Renderer renderer(config.samples, config.max_depth, config.tile_size);
-		if (no_preview) {
-			renderer.render(scene, fb, cam, config.background);
-		} else {
-			PreviewWindow preview(config.width, config.height);
-			std::thread render_thread([&]() {
-				renderer.render(scene, fb, cam, config.background);
-			});
-			while (!preview.should_close()) {
-				preview.poll_events();
-				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview.update(fb.raw_data());
-			}
-			render_thread.join();
-		}
+		auto go = [&]() { renderer.render(scene, fb, cam, config.background); };
+		if (no_preview) go();
+		else render_with_preview(fb, config.width, config.height, go);
 	}
 
 	if (use_denoise) {

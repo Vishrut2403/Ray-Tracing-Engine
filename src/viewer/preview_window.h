@@ -7,7 +7,7 @@ public:
 	~PreviewWindow();
 
 	bool should_close() const;
-	void poll_events();
+	void wait_events(double timeout);
 	void update(const float* framebuffer_data);
 
 private:

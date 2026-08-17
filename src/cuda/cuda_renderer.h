@@ -4,7 +4,6 @@
 #include "core/camera.h"
 #include "scenes/cornell_scene.h"
 #include "core/vec3.h"
-#include "viewer/preview_window.h"
 #include <string>
 
 bool cuda_supports_scene(const std::string& name);
@@ -20,6 +19,8 @@ void cuda_render(const Scene& scene,
 				 const color& background,
 				 int spp,
 				 int max_depth,
-				 PreviewWindow* preview = nullptr,
+				 // Publish the running average to `fb` for the preview. The
+				 // window belongs to the main thread and is not reachable here.
+				 bool stage_frames = false,
 				 const std::string& scene_name = "cornell",
 				 GpuIntegrator integrator = GpuIntegrator::PATH_TRACER);

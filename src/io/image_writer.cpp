@@ -4,29 +4,12 @@
 #include <vector>
 #include <iostream>
 #include "core/rtweekend.h"
+#include "render/tonemap.h"
 
 #define TINYEXR_IMPLEMENTATION
 #define TINYEXR_USE_MINIZ 1
 #include "external/miniz.h"
 #include "external/tinyexr.h"
-
-static inline double aces_filmic(double x) {
-	const double a=2.51, b=0.03, c=2.43, d=0.59, e=0.14;
-	return clamp((x*(a*x+b))/(x*(c*x+d)+e), 0.0, 1.0);
-}
-
-static constexpr double EXPOSURE      = 1.0;
-static constexpr double FIREFLY_CLAMP = 20.0;
-
-static inline color firefly_clamp(color c) {
-	double lum = 0.2126*c.x() + 0.7152*c.y() + 0.0722*c.z();
-	if (lum > FIREFLY_CLAMP && lum > 0.0) c = c * (FIREFLY_CLAMP / lum);
-	return c;
-}
-
-static inline double gamma_encode(double x) {
-	return std::pow(clamp(x, 0.0, 1.0), 1.0/2.2);
-}
 
 void ImageWriter::write_ppm(
 	const std::string& path,
@@ -38,10 +21,10 @@ void ImageWriter::write_ppm(
 
 	for (int j = H-1; j >= 0; --j) {
 		for (int i = 0; i < W; ++i) {
-			color c = firefly_clamp(fb.get(i, j)) * EXPOSURE;
-			int ir = (int)(256 * clamp(gamma_encode(aces_filmic(c.x())), 0.0, 0.999));
-			int ig = (int)(256 * clamp(gamma_encode(aces_filmic(c.y())), 0.0, 0.999));
-			int ib = (int)(256 * clamp(gamma_encode(aces_filmic(c.z())), 0.0, 0.999));
+			color c = tonemap_display(fb.get(i, j));
+			int ir = (int)(256 * clamp(c.x(), 0.0, 0.999));
+			int ig = (int)(256 * clamp(c.y(), 0.0, 0.999));
+			int ib = (int)(256 * clamp(c.z(), 0.0, 0.999));
 			out << ir << " " << ig << " " << ib << "\n";
 		}
 	}

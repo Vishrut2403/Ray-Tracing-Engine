@@ -1,7 +1,9 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "viewer/preview_window.h"
+#include "render/tonemap.h"
 #include <iostream>
+#include <string>
 #include <vector>
 
 static unsigned int compile_shader(unsigned int type, const char* src) {
@@ -77,21 +79,21 @@ PreviewWindow::PreviewWindow(int w, int h) : width(w), height(h)
 		}
 	)";
 
-	const char* fs = R"(
-		#version 330 core
-		in vec2 uv;
-		out vec4 FragColor;
-		uniform sampler2D screenTex;
-		void main() {
-			vec3 col = texture(screenTex, uv).rgb;
-			col = pow(clamp(col, 0.0, 1.0), vec3(1.0 / 2.2));
-			FragColor = vec4(col, 1.0);
-		}
-	)";
+	std::string fs = std::string(
+		"#version 330 core\n"
+		"in vec2 uv;\n"
+		"out vec4 FragColor;\n"
+		"uniform sampler2D screenTex;\n")
+		+ tonemap_glsl() +
+		"void main() {\n"
+		"    FragColor = vec4(tonemap_display(texture(screenTex, uv).rgb), 1.0);\n"
+		"}\n";
 
-	shader_program = create_program(vs, fs);
+	shader_program = create_program(vs, fs.c_str());
 	glUseProgram(shader_program);
 	glUniform1i(glGetUniformLocation(shader_program, "screenTex"), 0);
+
+	glfwSwapInterval(1);   // else the redraw loop spins on a core
 }
 
 PreviewWindow::~PreviewWindow() {
@@ -104,7 +106,9 @@ PreviewWindow::~PreviewWindow() {
 }
 
 bool PreviewWindow::should_close() const { return glfwWindowShouldClose(window); }
-void PreviewWindow::poll_events()        { glfwPollEvents(); }
+
+// This and update() are GLFW/GL calls: main thread only, never under a lock.
+void PreviewWindow::wait_events(double timeout) { glfwWaitEventsTimeout(timeout); }
 
 void PreviewWindow::update(const float* fb)
 {

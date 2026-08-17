@@ -12,9 +12,27 @@
 #include "core/camera.h"
 #include "scenes/cornell_scene.h"
 
+#include <chrono>
 #include <cstdio>
 #include <mutex>
 #include <string>
+
+// Staging costs a full device-to-host copy and a sync, so it is paced by the
+// clock rather than by sample count.
+namespace {
+struct FrameStager {
+	using clock = std::chrono::steady_clock;
+	clock::time_point last = clock::now() - std::chrono::seconds(1);
+	bool due(bool enabled, bool final_sample) {
+		if (!enabled) return false;
+		auto now = clock::now();
+		if (!final_sample && now - last < std::chrono::milliseconds(33))
+			return false;
+		last = now;
+		return true;
+	}
+};
+}
 
 
 void GpuScene::free_device() {
@@ -45,7 +63,7 @@ void cuda_render(const Scene& scene,
 				 const camera& cam,
 				 const color& background,
 				 int spp, int max_depth,
-				 PreviewWindow* preview,
+				 bool stage_frames,
 				 const std::string& scene_name,
 				 GpuIntegrator integrator) {
 					
@@ -123,6 +141,7 @@ void cuda_render(const Scene& scene,
 	cudaMallocHost(&h_accum, N * 3 * sizeof(float));
 
 	GpuCamera gpu_cam = make_gpu_camera(cam);
+	FrameStager stager;
 	dim3 threads(16,16);
 	dim3 blocks((W+15)/16, (H+15)/16);
 
@@ -145,20 +164,13 @@ void cuda_render(const Scene& scene,
 			);
 			cudaStreamSynchronize(stream);
 
-			if (preview && (s % 4 == 0 || s == spp-1)) {
+			if (stager.due(stage_frames, s == spp-1)) {
 				cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
 								cudaMemcpyDeviceToHost, stream);
 				cudaStreamSynchronize(stream);
 				float inv = 1.0f / (s+1);
-				{
-					std::lock_guard<std::mutex> lock(fb.mtx);
-					fb.set_bulk(h_accum, inv);
-				}
-				preview->poll_events();
-				{
-					std::lock_guard<std::mutex> lock(fb.mtx);
-					preview->update(fb.raw_data());
-				}
+				std::lock_guard<std::mutex> lock(fb.mtx);
+				fb.set_bulk(h_accum, inv);
 			}
 		}
 
@@ -212,19 +224,12 @@ void cuda_render(const Scene& scene,
 				d_env_map, gpu_scene.medium);
 			cudaStreamSynchronize(stream);
 
-			if (preview && (s % 4 == 0 || s == spp-1)) {
+			if (stager.due(stage_frames, s == spp-1)) {
 				cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
 								cudaMemcpyDeviceToHost, stream);
 				cudaStreamSynchronize(stream);
-				{
-					std::lock_guard<std::mutex> lock(fb.mtx);
-					fb.set_bulk(h_accum, 1.0f/(s+1));
-				}
-				preview->poll_events();
-				{
-					std::lock_guard<std::mutex> lock(fb.mtx);
-					preview->update(fb.raw_data());
-				}
+				std::lock_guard<std::mutex> lock(fb.mtx);
+				fb.set_bulk(h_accum, 1.0f/(s+1));
 			}
 		}
 		cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
@@ -261,7 +266,6 @@ void cuda_render(const Scene& scene,
 	const int SPATIAL_RADIUS = 30;
 	const int GI_K_NEIGHBORS = 1;
 	const int GI_SPATIAL_RADIUS = 5;
-	const int PREVIEW_EVERY  = 4;
 
 	printf("[CUDA/ReSTIR+GI] %dx%d spp=%d M=%d K=%d r=%d\n",
 		   W, H, spp, M_CANDIDATES, K_NEIGHBORS, SPATIAL_RADIUS);
@@ -371,20 +375,13 @@ void cuda_render(const Scene& scene,
 		d_gi_prev           = d_gi_spatial;
 		d_gi_spatial        = tmp_gi;
 
-		if (preview && (s % PREVIEW_EVERY == 0 || s == spp-1)) {
+		if (stager.due(stage_frames, s == spp-1)) {
 			cudaMemcpyAsync(h_accum, d_accum, N*3*sizeof(float),
 							cudaMemcpyDeviceToHost, stream);
 			cudaStreamSynchronize(stream);
 			float inv = 1.0f / (s+1);
-			{
-				std::lock_guard<std::mutex> lock(fb.mtx);
-				fb.set_bulk(h_accum, inv);
-			}
-			preview->poll_events();
-			{
-				std::lock_guard<std::mutex> lock(fb.mtx);
-				preview->update(fb.raw_data());
-			}
+			std::lock_guard<std::mutex> lock(fb.mtx);
+			fb.set_bulk(h_accum, inv);
 		}
 	}
 

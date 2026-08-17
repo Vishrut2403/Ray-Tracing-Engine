@@ -56,7 +56,7 @@ void compare_scene(const std::string& scene_name, int spp, int depth,
 	Renderer renderer(spp, depth, 32);
 	renderer.render(scene, fb_cpu, cam, cfg.background);
 	cuda_render(scene, fb_gpu, cam, cfg.background, spp, depth,
-				nullptr, scene_name, GpuIntegrator::PATH_TRACER);
+				false, scene_name, GpuIntegrator::PATH_TRACER);
 
 	Stats c = measure(fb_cpu, W, H), g = measure(fb_gpu, W, H);
 
@@ -199,7 +199,7 @@ void check_restir(const std::string& scene_name, int spp, int depth,
 
 	Renderer(spp, depth, 32).render(scene, fb_pt, cam, cfg.background);
 	cuda_render(scene, fb_rs, cam, cfg.background, spp, depth,
-				nullptr, scene_name, GpuIntegrator::RESTIR);
+				false, scene_name, GpuIntegrator::RESTIR);
 
 	Stats p = measure(fb_pt, W, H), r = measure(fb_rs, W, H);
 	double ratio = p.mean > 1e-9 ? r.mean / p.mean : 0.0;
