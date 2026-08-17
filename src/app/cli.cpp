@@ -5,9 +5,13 @@
 #include <string>
 #include <cstdlib>
 
+static bool has_ext(const std::string& s, const char* ext) {
+	return s.size() >= 4 && s.compare(s.size() - 4, 4, ext) == 0;
+}
+
 static void print_usage(const char* prog) {
 	std::cerr << "Usage: " << prog
-			  << " <output> [scene]"
+			  << " <output[.ppm|.exr]> [scene]"
 			  << " [--width N] [--height N] [--spp N] [--depth N] [--tile N]\n"
 			  << "  scene: cornell | furnace  (default: cornell)\n";
 }
@@ -31,8 +35,9 @@ RenderConfig parse_cli(int argc, char** argv)
 		else if ((a == "--tile"   || a == "-t") && i+1 < argc) config.tile_size = std::atoi(argv[++i]);
 	}
 
-	if (config.output_path.size() < 4 ||
-		config.output_path.substr(config.output_path.size() - 4) != ".ppm")
+	// main() picks the writer off this extension, so .exr has to survive here.
+	if (!has_ext(config.output_path, ".ppm") &&
+		!has_ext(config.output_path, ".exr"))
 		config.output_path += ".ppm";
 
 	namespace fs = std::filesystem;
