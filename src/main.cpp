@@ -8,6 +8,7 @@
 #include "io/image_writer.h"
 #include "io/denoiser.h"
 #include "viewer/preview_window.h"
+#include "viewer/viewport.h"
 #include "cuda/cuda_renderer.h"
 
 #include <thread>
@@ -96,6 +97,24 @@ int main(int argc, char** argv)
 
 	GpuIntegrator gpu_integrator = want_restir ? GpuIntegrator::RESTIR
 											   : GpuIntegrator::PATH_TRACER;
+
+	// The viewport shows the scene instead of rendering it, so it returns
+	// before any framebuffer or output file gets made.
+	if (has_flag(argc, argv, "--viewport")) {
+		Scene scene = SceneFactory::build(config.feature);
+		TriSoup tris;
+		scene.world->tessellate(tris);
+		std::cerr << "[viewport] " << tris.size() << " triangles\n";
+
+		camera cam = CameraFactory::build(config);
+		Viewport view(tris, viewport_camera_from(cam),
+					  config.width, config.height);
+		while (!view.should_close()) {
+			view.draw();
+			view.wait_events(1.0/60.0);
+		}
+		return 0;
+	}
 
 	Scene  scene = SceneFactory::build(config.feature);
 	// Scenes carry a default integrator; --integrator overrides it so the same

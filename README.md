@@ -186,6 +186,9 @@ Arguments are positional: `render <output> [scene] [flags]`. The output extensio
 
 # Energy conservation validation
 ./build/render furnace.ppm furnace --no-preview
+
+# Look at the scene's geometry instead of rendering it
+./build/render out.ppm bunny --viewport --width 1280 --height 720
 ```
 
 **Flags:**
@@ -201,6 +204,32 @@ Arguments are positional: `render <output> [scene] [flags]`. The output extensio
 | `--integrator pt\|bdpt\|ppm\|restir` | | per scene | Override the scene's integrator |
 | `--denoise` | | off | Run Open Image Denoise on the result |
 | `--no-preview` | | off | Headless; no OpenGL window |
+| `--viewport` | | off | Open the scene in the viewport instead of rendering it |
+
+**Viewport navigation** (Blender's bindings, on a y-up world):
+
+| Input | Action |
+|:---|:---|
+| MMB drag / `Alt` + LMB drag | Orbit |
+| `Shift` + MMB drag | Pan |
+| `Ctrl` + MMB drag, scroll wheel, numpad `+`/`-` | Zoom |
+| Numpad `1` / `3` / `7` | Front / right / top, orthographic (`Ctrl` for the opposite side) |
+| Numpad `9` | Swing round to the other side |
+| Numpad `5` | Toggle orthographic |
+| Numpad `2` `4` `6` `8` | Orbit in 15 degree steps |
+| `M` | Toggle material colours against Blender's flat grey |
+| `Home` | Frame the whole scene |
+| `Esc` | Close |
+
+The view opens where the scene's render camera stands, so what you see is what
+would be rendered. Dragging moves the scene rather than the camera: drag right
+and the scene follows right.
+
+Solid shading lights the scene with three fixed studio lights in view space, so
+they follow the camera and every surface stays readable however the view is
+turned. Surfaces take their colour from the material — glass gets a pale cast
+since it has no albedo to show, and emitters draw flat at their own hue. None
+of it is a physical quantity: it is there to show shape, not to be correct.
 
 **Scenes:** `cornell`, `furnace`, `closed_furnace`, `ggx`, `hdr`, `bunny`, `glass`, `caustics`, `helmet`, `ppm`, `sss`, `volume`.
 

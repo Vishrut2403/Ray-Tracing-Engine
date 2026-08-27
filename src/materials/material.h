@@ -41,6 +41,11 @@ public:
 	// True for participating-media phase functions, which have no surface
 	// normal and so take no cosine factor.
 	virtual bool is_phase_function() const { return false; }
+
+	// Viewport shading only. The integrators never call these; they exist so
+	// the solid view can colour a surface without re-describing the scene.
+	virtual color display_color()    const { return color(0.8, 0.8, 0.8); }
+	virtual bool  display_emissive() const { return false; }
 };
 
 class lambertian : public material {
@@ -49,6 +54,10 @@ public:
 
 	lambertian(const color& a) : albedo(std::make_shared<solid_color>(a)) {}
 	lambertian(std::shared_ptr<texture> a) : albedo(a) {}
+
+	virtual color display_color() const override {
+		return albedo->value(0.5, 0.5, point3(0,0,0));
+	}
 
 	virtual BSDFSample sample(const ray&, const hit_record& rec) const override {
 		onb uvw; uvw.build_from_w(rec.normal);
@@ -98,6 +107,8 @@ public:
 
 	metal(const color& a, real f) : albedo(a), fuzz(f < 1.0 ? f : 1.0) {}
 
+	virtual color display_color() const override { return albedo; }
+
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		vec3 r = unit_vector(reflect(unit_vector(wo.direction()), rec.normal)
 							 + fuzz * random_in_unit_sphere());
@@ -122,6 +133,12 @@ public:
 	real ir;
 
 	dielectric(real index_of_refraction) : ir(index_of_refraction) {}
+
+	// Clear glass has no albedo to show, so it gets the pale cast a solid view
+	// conventionally draws it with.
+	virtual color display_color() const override {
+		return color(0.82, 0.88, 0.95);
+	}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		vec3   ud    = unit_vector(wo.direction());
@@ -168,6 +185,8 @@ public:
 		: base_color(base),
 		  roughness(clamp(r, 0.001, 1.0)),
 		  metallic (clamp(m, 0.0,   1.0)) {}
+
+	virtual color display_color() const override { return base_color; }
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		return sample_dir(-unit_vector(wo.direction()), rec);
@@ -318,6 +337,11 @@ public:
 	diffuse_light(std::shared_ptr<texture> a) : emit(a) {}
 	diffuse_light(color c) : emit(std::make_shared<solid_color>(c)) {}
 
+	virtual color display_color() const override {
+		return emit->value(0.5, 0.5, point3(0,0,0));
+	}
+	virtual bool display_emissive() const override { return true; }
+
 	virtual color emitted(const ray&, const hit_record& rec,
 						  real u, real v, const point3& p) const override {
 		if (!rec.front_face) return color(0,0,0);
@@ -344,6 +368,10 @@ public:
 		: albedo(std::make_shared<solid_color>(c)), g(clamp(g_, -0.99, 0.99)) {}
 	isotropic(std::shared_ptr<texture> a, real g_ = 0.0)
 		: albedo(a), g(clamp(g_, -0.99, 0.99)) {}
+
+	virtual color display_color() const override {
+		return albedo->value(0.5, 0.5, point3(0,0,0));
+	}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		return sample_dir(-unit_vector(wo.direction()), rec);
@@ -414,6 +442,8 @@ public:
 		  ior(ior_),
 		  Rd(total_diffuse_reflectance(alb, ior_)),
 		  T_entry(1.0 - fdr(ior_)) {}
+
+	virtual color display_color() const override { return albedo_color; }
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		return sample_dir(-unit_vector(wo.direction()), rec);
@@ -489,6 +519,10 @@ public:
 		: tint(t),
 		  roughness(clamp(r, 0.001, 1.0)),
 		  ior(ior) {}
+
+	virtual color display_color() const override {
+		return tint * color(0.82, 0.88, 0.95);
+	}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
 		return sample_dir(-unit_vector(wo.direction()), rec);

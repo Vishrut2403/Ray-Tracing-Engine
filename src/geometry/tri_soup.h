@@ -65,3 +65,20 @@ inline void tri_add_uv_sphere(TriSoup& out, const point3& center, real radius,
 			tri_add(out, a, c, d, na, nc, nd, m);
 		}
 }
+
+// Bounding sphere of the display geometry, for framing the whole scene.
+inline void tri_soup_bounds(const TriSoup& s, point3& center, real& radius) {
+	if (s.empty()) { center = point3(0,0,0); radius = 1; return; }
+
+	point3 lo = s[0].v0, hi = s[0].v0;
+	for (const Tri& t : s)
+		for (const point3& v : {t.v0, t.v1, t.v2})
+			for (int i = 0; i < 3; ++i) {
+				if (v[i] < lo[i]) lo[i] = v[i];
+				if (v[i] > hi[i]) hi[i] = v[i];
+			}
+
+	center = (real)0.5 * (lo + hi);
+	radius = (real)0.5 * (hi - lo).length();
+	if (!(radius > 0)) radius = 1;
+}

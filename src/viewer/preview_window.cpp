@@ -1,43 +1,11 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "viewer/preview_window.h"
+#include "viewer/gl_util.h"
 #include "render/tonemap.h"
 #include <iostream>
 #include <string>
 #include <vector>
-
-static unsigned int compile_shader(unsigned int type, const char* src) {
-	unsigned int id = glCreateShader(type);
-	glShaderSource(id, 1, &src, nullptr);
-	glCompileShader(id);
-	int ok;
-	glGetShaderiv(id, GL_COMPILE_STATUS, &ok);
-	if (!ok) {
-		char log[512];
-		glGetShaderInfoLog(id, 512, nullptr, log);
-		std::cerr << "Shader compile error:\n" << log << "\n";
-	}
-	return id;
-}
-
-static unsigned int create_program(const char* vs, const char* fs) {
-	unsigned int prog = glCreateProgram();
-	unsigned int v = compile_shader(GL_VERTEX_SHADER, vs);
-	unsigned int f = compile_shader(GL_FRAGMENT_SHADER, fs);
-	glAttachShader(prog, v);
-	glAttachShader(prog, f);
-	glLinkProgram(prog);
-	int ok;
-	glGetProgramiv(prog, GL_LINK_STATUS, &ok);
-	if (!ok) {
-		char log[512];
-		glGetProgramInfoLog(prog, 512, nullptr, log);
-		std::cerr << "Program link error:\n" << log << "\n";
-	}
-	glDeleteShader(v);
-	glDeleteShader(f);
-	return prog;
-}
 
 PreviewWindow::PreviewWindow(int w, int h) : width(w), height(h)
 {
@@ -89,7 +57,7 @@ PreviewWindow::PreviewWindow(int w, int h) : width(w), height(h)
 		"    FragColor = vec4(tonemap_display(texture(screenTex, uv).rgb), 1.0);\n"
 		"}\n";
 
-	shader_program = create_program(vs, fs.c_str());
+	shader_program = gl_create_program(vs, fs.c_str());
 	glUseProgram(shader_program);
 	glUniform1i(glGetUniformLocation(shader_program, "screenTex"), 0);
 

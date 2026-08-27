@@ -46,7 +46,8 @@ set(TEST_SRC ${CMAKE_SOURCE_DIR}/src/tests/test_main.cpp
              ${CMAKE_SOURCE_DIR}/src/tests/test_gpu.cu
              ${CMAKE_SOURCE_DIR}/src/tests/test_medium.cu
              ${CMAKE_SOURCE_DIR}/src/tests/test_render.cpp
-             ${CMAKE_SOURCE_DIR}/src/tests/test_tessellate.cpp)
+             ${CMAKE_SOURCE_DIR}/src/tests/test_tessellate.cpp
+             ${CMAKE_SOURCE_DIR}/src/tests/test_viewport.cpp)
 list(FILTER CPU_SRC  EXCLUDE REGEX ".*/tests/.*")
 list(FILTER CUDA_SRC EXCLUDE REGEX ".*/tests/.*")
 set(CORE_SRC ${CPU_SRC})
