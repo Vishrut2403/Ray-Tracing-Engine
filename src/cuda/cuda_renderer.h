@@ -4,6 +4,7 @@
 #include "core/camera.h"
 #include "scenes/cornell_scene.h"
 #include "core/vec3.h"
+#include <atomic>
 #include <string>
 
 bool cuda_supports_scene(const std::string& name);
@@ -23,4 +24,7 @@ void cuda_render(const Scene& scene,
 				 // window belongs to the main thread and is not reachable here.
 				 bool stage_frames = false,
 				 const std::string& scene_name = "cornell",
-				 GpuIntegrator integrator = GpuIntegrator::PATH_TRACER);
+				 GpuIntegrator integrator = GpuIntegrator::PATH_TRACER,
+				 // Checked between samples. A cancelled render leaves the mean
+				 // of the samples that did finish.
+				 const std::atomic<bool>* cancel = nullptr);

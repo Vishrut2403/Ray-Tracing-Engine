@@ -3,9 +3,12 @@
 #include "viewer/viewport.h"
 #include "viewer/gl_util.h"
 #include "viewer/solid_shading.h"
+#include "render/tonemap.h"
 
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
+#include <string>
 #include <vector>
 
 namespace {
@@ -71,6 +74,16 @@ const char* kFragmentShader = R"(
 		float spec = pow(max(dot(n, normalize(kKeyDir + v)), 0.0), 48.0);
 
 		FragColor = vec4(base * lit + 0.25 * spec * kKeyTint, vColor.a);
+	}
+)";
+
+const char* kQuadVertexShader = R"(
+	#version 330 core
+	layout(location = 0) in vec2 aPos;
+	out vec2 uv;
+	void main() {
+		uv = (aPos + 1.0) * 0.5;
+		gl_Position = vec4(aPos, 0.0, 1.0);
 	}
 )";
 
@@ -166,11 +179,49 @@ Viewport::Viewport(const TriSoup& tris, const ViewportCamera& cam,
 
 	shader_program = gl_create_program(kVertexShader, kFragmentShader);
 
+	// The traced frame arrives as a texture, so it needs a quad of its own and
+	// the same display transform the image writer applies.
+	const float quad[] = { -1.f,-1.f,  3.f,-1.f,  -1.f,3.f };
+	glGenVertexArrays(1, &quad_vao);
+	glGenBuffers(1, &quad_vbo);
+	glBindVertexArray(quad_vao);
+	glBindBuffer(GL_ARRAY_BUFFER, quad_vbo);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(quad), quad, GL_STATIC_DRAW);
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 2*sizeof(float), nullptr);
+
+	std::string quad_fs = std::string(
+		"#version 330 core\n"
+		"in vec2 uv;\n"
+		"out vec4 FragColor;\n"
+		"uniform sampler2D screenTex;\n")
+		+ tonemap_glsl() +
+		"void main() {\n"
+		"    FragColor = vec4(tonemap_display(texture(screenTex, uv).rgb), 1.0);\n"
+		"}\n";
+	quad_program = gl_create_program(kQuadVertexShader, quad_fs.c_str());
+	glUseProgram(quad_program);
+	glUniform1i(glGetUniformLocation(quad_program, "screenTex"), 0);
+
+	glGenTextures(1, &render_tex);
+	glBindTexture(GL_TEXTURE_2D, render_tex);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+
+	rendered_view = camera;
+
 	glEnable(GL_DEPTH_TEST);
 	glfwSwapInterval(1);   // else the redraw loop spins on a core
 }
 
 Viewport::~Viewport() {
+	stop_render();
+	glDeleteTextures(1, &render_tex);
+	glDeleteProgram(quad_program);
+	glDeleteBuffers(1, &quad_vbo);
+	glDeleteVertexArrays(1, &quad_vao);
 	glDeleteBuffers(1, &vbo);
 	glDeleteVertexArrays(1, &vao);
 	glDeleteProgram(shader_program);
@@ -258,16 +309,103 @@ void Viewport::on_key(int key, int action, int mods)
 			camera.yaw += (real)3.14159265358979323846;
 			camera.pitch = -camera.pitch; break;
 
-		// Blender puts this in the shading popover; there is no popover here.
+		// Blender puts these in the shading popover; there is no popover here.
+		case GLFW_KEY_R:
+			set_rendered(!rendered); break;
+
 		case GLFW_KEY_M:
 			material_color = !material_color; break;
 
 		case GLFW_KEY_KP_5:
-			camera.orthographic = !camera.orthographic; break;
+			if (!rendered) camera.orthographic = !camera.orthographic;
+			break;
 		case GLFW_KEY_KP_ADD:      camera.dolly( 1); break;
 		case GLFW_KEY_KP_SUBTRACT: camera.dolly(-1); break;
 		default: break;
 	}
+}
+
+void Viewport::set_render(RenderFn fn) { render_fn = std::move(fn); }
+
+void Viewport::set_rendered(bool on) {
+	if (on && !render_fn) return;
+	rendered = on;
+	if (rendered) {
+		// The tracer has no orthographic camera, so rendered mode drops back
+		// to the perspective the view already frames.
+		camera.orthographic = false;
+		render_w = render_h = 0;   // forces a start on the next frame
+	} else {
+		stop_render();
+	}
+}
+
+void Viewport::stop_render() {
+	cancel = true;
+	if (worker.joinable()) worker.join();
+	cancel = false;
+}
+
+void Viewport::start_render() {
+	stop_render();
+	if (!render_fn || render_w <= 0 || render_h <= 0) return;
+
+	render_fb = std::make_unique<Framebuffer>(render_w, render_h);
+	snapshot.assign((size_t)render_w * render_h * 3, 0.0f);
+
+	// The camera is copied, not captured: the worker must not see the view
+	// change under it while it traces.
+	::camera cam = to_render_camera(rendered_view, (real)render_w / render_h);
+	Framebuffer* fb = render_fb.get();
+	worker = std::thread([this, cam, fb]() { render_fn(cam, *fb, cancel); });
+}
+
+// A render is started one frame after the view and the window both stop
+// changing, so a drag cancels rather than queueing a render per frame.
+void Viewport::update_render() {
+	int w, h;
+	glfwGetFramebufferSize(window, &w, &h);
+
+	if (!same_view(camera, rendered_view) || w != render_w || h != render_h) {
+		stop_render();
+		rendered_view = camera;
+		render_w = w;
+		render_h = h;
+		pending  = true;
+		return;
+	}
+	if (pending) { pending = false; start_render(); }
+}
+
+void Viewport::draw_rendered()
+{
+	update_render();
+
+	glDisable(GL_DEPTH_TEST);
+	glClearColor(0.f, 0.f, 0.f, 1.f);
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
+	if (render_fb) {
+		{
+			// Held for the copy only: drawing under it would stall every
+			// render thread until the compositor accepted the frame.
+			std::lock_guard<std::mutex> lock(render_fb->mtx);
+			std::memcpy(snapshot.data(), render_fb->raw_data(),
+						snapshot.size() * sizeof(float));
+		}
+		glBindTexture(GL_TEXTURE_2D, render_tex);
+		glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB32F, render_w, render_h, 0,
+					 GL_RGB, GL_FLOAT, snapshot.data());
+
+		glUseProgram(quad_program);
+		glBindVertexArray(quad_vao);
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, render_tex);
+		glDrawArrays(GL_TRIANGLES, 0, 3);
+	}
+
+	glEnable(GL_DEPTH_TEST);
+	glfwSwapBuffers(window);
 }
 
 void Viewport::draw()
@@ -276,6 +414,8 @@ void Viewport::draw()
 	glfwGetFramebufferSize(window, &fb_w, &fb_h);
 	if (fb_h <= 0) return;                 // minimised: nothing to project onto
 	glViewport(0, 0, fb_w, fb_h);
+
+	if (rendered) { draw_rendered(); return; }
 
 	mat4 view = camera.view();
 	mat4 vp   = camera.view_proj((real)fb_w / (real)fb_h);

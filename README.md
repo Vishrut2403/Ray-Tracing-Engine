@@ -205,6 +205,7 @@ Arguments are positional: `render <output> [scene] [flags]`. The output extensio
 | `--denoise` | | off | Run Open Image Denoise on the result |
 | `--no-preview` | | off | Headless; no OpenGL window |
 | `--viewport` | | off | Open the scene in the viewport instead of rendering it |
+| `--rendered` | | off | Open the viewport straight into rendered mode |
 
 **Viewport navigation** (Blender's bindings, on a y-up world):
 
@@ -217,6 +218,7 @@ Arguments are positional: `render <output> [scene] [flags]`. The output extensio
 | Numpad `9` | Swing round to the other side |
 | Numpad `5` | Toggle orthographic |
 | Numpad `2` `4` `6` `8` | Orbit in 15 degree steps |
+| `R` | Toggle rendered mode: path-trace the framed view |
 | `M` | Toggle material colours against Blender's flat grey |
 | `Home` | Frame the whole scene |
 | `Esc` | Close |
@@ -224,6 +226,11 @@ Arguments are positional: `render <output> [scene] [flags]`. The output extensio
 The view opens where the scene's render camera stands, so what you see is what
 would be rendered. Dragging moves the scene rather than the camera: drag right
 and the scene follows right.
+
+Rendered mode traces exactly what the view frames, refining pass by pass, and
+restarts from scratch a frame after the view settles. It uses `--spp`, `--depth`
+and `--device` like an offline render, and drops back to perspective on the way
+in since the tracer has no orthographic camera.
 
 Solid shading lights the scene with three fixed studio lights in view space, so
 they follow the camera and every surface stays readable however the view is

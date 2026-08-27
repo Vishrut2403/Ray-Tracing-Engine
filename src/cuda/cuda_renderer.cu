@@ -65,7 +65,8 @@ void cuda_render(const Scene& scene,
 				 int spp, int max_depth,
 				 bool stage_frames,
 				 const std::string& scene_name,
-				 GpuIntegrator integrator) {
+				 GpuIntegrator integrator,
+				 const std::atomic<bool>* cancel) {
 					
 	const int W = fb.get_width();
 	const int H = fb.get_height();
@@ -152,6 +153,7 @@ void cuda_render(const Scene& scene,
 		cudaMallocHost(&h_accum, N * 3 * sizeof(float));
 
 		for (int s = 0; s < spp; ++s) {
+			if (cancel && cancel->load()) { spp = s > 0 ? s : 1; break; }
 			accumulate_bdpt_kernel<<<blocks,threads,0,stream>>>(
 				d_accum, W, H, max_depth,
 				gpu_cam,
@@ -212,6 +214,7 @@ void cuda_render(const Scene& scene,
 	if (integrator == GpuIntegrator::PATH_TRACER) {
 		printf("[CUDA/PT] %dx%d spp=%d depth=%d\n", W, H, spp, max_depth);
 		for (int s = 0; s < spp; ++s) {
+			if (cancel && cancel->load()) { spp = s > 0 ? s : 1; break; }
 			accumulate_kernel<<<blocks,threads,0,stream>>>(
 				d_accum, W, H, 1, max_depth, gpu_cam,
 				vec3(background.x(), background.y(), background.z()),
@@ -271,6 +274,7 @@ void cuda_render(const Scene& scene,
 		   W, H, spp, M_CANDIDATES, K_NEIGHBORS, SPATIAL_RADIUS);
 
 	for (int s = 0; s < spp; ++s) {
+		if (cancel && cancel->load()) { spp = s > 0 ? s : 1; break; }
 		bool has_prev = (s > 0);
 
 		// ── DI Pass 0: G-buffer + initial RIS ────────────────────────────────

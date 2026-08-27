@@ -126,6 +126,21 @@ struct ViewportCamera {
 	}
 };
 
+// The other direction: a pinhole camera looking where the viewport looks, so a
+// rendered frame covers exactly what solid shading was showing. The aperture is
+// zero because the viewport has no way to show a focal plane to set.
+inline camera to_render_camera(const ViewportCamera& vc, real aspect) {
+	return camera(vc.eye(), vc.target, vec3(0,1,0), vc.vfov, aspect,
+				  0, vc.distance, 0, 1);
+}
+
+// True when two views would render the same image.
+inline bool same_view(const ViewportCamera& a, const ViewportCamera& b) {
+	return a.target[0] == b.target[0] && a.target[1] == b.target[1]
+		&& a.target[2] == b.target[2] && a.distance == b.distance
+		&& a.yaw == b.yaw && a.pitch == b.pitch && a.vfov == b.vfov;
+}
+
 // The viewport opens on the view the renderer would use, so that Solid shading
 // and a path-traced frame frame the same thing rather than two hand-set views.
 inline ViewportCamera viewport_camera_from(const camera& cam) {

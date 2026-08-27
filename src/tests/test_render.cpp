@@ -12,9 +12,13 @@
 #include "cuda/cuda_renderer.h"
 #include "io/denoiser.h"
 
+#include <atomic>
+#include <chrono>
 #include <cstdio>
 #include <cmath>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -280,6 +284,109 @@ void test_denoiser() {
 		  rmse_after, rmse_before, 0.0);
 }
 
+// The pass-major loop exists so a viewport can stop a render and still have a
+// usable image. Both halves of that need holding down: stopping has to be
+// prompt, and what is left has to be the mean of the passes that did finish.
+void test_cancel() {
+	const int W = 96, H = 96;
+	RenderConfig cfg;
+	cfg.feature = "cornell";
+	cfg.width = W; cfg.height = H;
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+
+	// Cancelled before it starts: nothing traced, and it must not hang.
+	{
+		Framebuffer fb(W, H);
+		std::atomic<bool> cancel{true};
+		auto t0 = std::chrono::steady_clock::now();
+		Renderer r(4096, 10, 32);
+		r.verbose = false;
+		r.render(scene, fb, cam, cfg.background, &cancel);
+		double ms = std::chrono::duration<double, std::milli>(
+						std::chrono::steady_clock::now() - t0).count();
+		check(ms < 500.0, "cancel: a render cancelled up front returns at once",
+			  ms, 0.0, 500.0);
+		check(measure(fb, W, H).mean == 0.0,
+			  "cancel: nothing is left behind when no pass ran",
+			  measure(fb, W, H).mean, 0.0, 0.0);
+	}
+
+	// Cancelled part way: whatever passes finished have to average to a sane
+	// image, not a half-filled one.
+	{
+		Framebuffer fb(W, H);
+		std::atomic<bool> cancel{false};
+		Renderer r(4096, 10, 32);
+		r.verbose = false;
+
+		auto t0 = std::chrono::steady_clock::now();
+		std::thread stopper([&]() {
+			std::this_thread::sleep_for(std::chrono::milliseconds(700));
+			cancel = true;
+		});
+		r.render(scene, fb, cam, cfg.background, &cancel);
+		stopper.join();
+		double ms = std::chrono::duration<double, std::milli>(
+						std::chrono::steady_clock::now() - t0).count();
+
+		check(ms < 5000.0, "cancel: a running render stops promptly", ms, 700.0,
+			  4300.0);
+
+		Stats st = measure(fb, W, H);
+		int bad = 0;
+		for (int j = 0; j < H; ++j)
+			for (int i = 0; i < W; ++i) {
+				color c = fb.get(i, j);
+				for (int k = 0; k < 3; ++k)
+					if (!std::isfinite((double)c[k]) || c[k] < 0) ++bad;
+			}
+		check(bad == 0, "cancel: the partial image is finite and non-negative",
+			  (double)bad, 0.0, 0.5);
+
+		// It is a mean over complete passes, so it must land near a converged
+		// render rather than being darkened by the passes that never ran.
+		Framebuffer ref(W, H);
+		Renderer r2(64, 10, 32);
+		r2.verbose = false;
+		r2.render(scene, ref, cam, cfg.background);
+		Stats rs = measure(ref, W, H);
+		double rel = std::abs(st.mean - rs.mean) / std::max(rs.mean, 1e-9);
+		check(rel < 0.15, "cancel: what is left is an unbiased estimate",
+			  st.mean, rs.mean, 0.15 * rs.mean);
+	}
+}
+
+// Every sample is keyed by (pixel, index), so how the passes are cut into
+// tiles cannot move a single bit. This is what makes the pass-major reorder
+// safe to have made.
+void test_tiling_invariance() {
+	const int W = 64, H = 48;
+	RenderConfig cfg;
+	cfg.feature = "ggx";
+	cfg.width = W; cfg.height = H;
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+
+	std::vector<float> first;
+	for (int tile : {8, 32, 64}) {
+		Framebuffer fb(W, H);
+		Renderer r(8, 6, tile);
+		r.verbose = false;
+		r.render(scene, fb, cam, cfg.background);
+
+		std::vector<float> got(fb.raw_data(), fb.raw_data() + (size_t)W*H*3);
+		if (first.empty()) { first = got; continue; }
+
+		int differing = 0;
+		for (size_t i = 0; i < got.size(); ++i)
+			if (got[i] != first[i]) ++differing;
+		check(differing == 0,
+			  "tiling: tile size does not change a single pixel",
+			  (double)differing, 0.0, 0.5);
+	}
+}
+
 } // namespace
 
 void run_render_tests() {
@@ -295,6 +402,8 @@ void run_render_tests() {
 	// that exercises the GPU BDPT kernels.
 	compare_scene("caustics", 256, 12, 0.05);
 
+	test_cancel();
+	test_tiling_invariance();
 	test_closed_furnace();
 	test_ppm();
 

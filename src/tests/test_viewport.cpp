@@ -6,6 +6,7 @@
 
 #include "core/mat4.h"
 #include "core/camera.h"
+#include "core/ray.h"
 #include "core/camera_factory.h"
 #include "viewer/viewport_camera.h"
 #include "scenes/scene_factory.h"
@@ -588,6 +589,66 @@ void test_scene_colors(bool quick) {
 	}
 }
 
+// Rendered mode traces the framed view, so the camera the viewport hands the
+// renderer has to cast the same rays the scene's own camera would.
+void test_render_camera_round_trip() {
+	std::vector<std::string> names = { "cornell", "furnace", "closed_furnace",
+									   "ggx", "hdr", "glass", "caustics",
+									   "sss", "volume", "ppm", "bunny",
+									   "helmet" };
+
+	for (const std::string& name : names) {
+		RenderConfig cfg;
+		cfg.feature = name;
+		camera want = CameraFactory::build(cfg);
+		real aspect = (real)cfg.width / (real)cfg.height;
+		camera got  = to_render_camera(viewport_camera_from(want), aspect);
+
+		double worst_o = 0.0, worst_d = 0.0;
+		for (int a = 0; a <= 4; ++a)
+			for (int b = 0; b <= 4; ++b) {
+				real u = (real)a / 4, v = (real)b / 4;
+				ray rw = want.get_ray(u, v), rg = got.get_ray(u, v);
+				real scale = std::max((real)1, rw.origin().length());
+				worst_o = std::max(worst_o,
+					(double)(rg.origin() - rw.origin()).length() / (double)scale);
+				worst_d = std::max(worst_d,
+					(double)(unit_vector(rg.direction())
+							 - unit_vector(rw.direction())).length());
+			}
+
+		check(worst_o < 1e-5, "render camera '" + name + "': same eye",
+			  worst_o, 0.0, 1e-5);
+		check(worst_d < 1e-4, "render camera '" + name + "': same rays",
+			  worst_d, 0.0, 1e-4);
+	}
+}
+
+// A render is restarted whenever the view changes, so every field that moves
+// the image has to count as a change and nothing else may.
+void test_same_view() {
+	ViewportCamera a;
+	a.target = point3(1,2,3); a.distance = 7; a.yaw = (real)0.4;
+	a.pitch = (real)-0.2; a.vfov = 35;
+
+	check(same_view(a, a), "same_view: a view matches itself", 1.0, 1.0, 0.5);
+
+	{ ViewportCamera b = a; b.orbit(1, 0);
+	  check(!same_view(a, b), "same_view: orbit counts as a change", 0.0, 0.0, 0.5); }
+	{ ViewportCamera b = a; b.pan(1, 0, 100);
+	  check(!same_view(a, b), "same_view: pan counts as a change", 0.0, 0.0, 0.5); }
+	{ ViewportCamera b = a; b.dolly(1);
+	  check(!same_view(a, b), "same_view: dolly counts as a change", 0.0, 0.0, 0.5); }
+	{ ViewportCamera b = a; b.vfov = 36;
+	  check(!same_view(a, b), "same_view: the field of view counts", 0.0, 0.0, 0.5); }
+
+	// Solid shading settings do not change what a traced frame looks like, so
+	// toggling them must not throw the render away.
+	{ ViewportCamera b = a; b.scene_radius = 99;
+	  check(same_view(a, b), "same_view: the clip range is not a view change",
+			1.0, 1.0, 0.5); }
+}
+
 // End to end: the display geometry, projected through the viewport's own
 // matrices, has to land in front of the camera and inside the frame. A flipped
 // sign anywhere in the chain leaves the scene behind the viewer instead.
@@ -650,6 +711,8 @@ void run_viewport_tests(bool quick) {
 	test_framing_and_axis_views();
 	test_orthographic();
 	test_pivot();
+	test_render_camera_round_trip();
+	test_same_view();
 	test_display_colors();
 	test_scene_colors(quick);
 	test_scenes_are_framed(quick);

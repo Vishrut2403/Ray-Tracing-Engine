@@ -17,7 +17,8 @@ void Renderer::render(
 	const Scene& scene,
 	Framebuffer& fb,
 	const camera& cam,
-	const color& background
+	const color& background,
+	const std::atomic<bool>* cancel
 ) {
 	auto world  = scene.world;
 	auto lights = scene.lights;
@@ -26,7 +27,6 @@ void Renderer::render(
 
 	const int W = fb.get_width();
 	const int H = fb.get_height();
-	int tiles_done = 0;
 
 	// t == 1 deposits into arbitrary pixels, so it cannot use the tile buffers.
 	BDPTSplatBuffer splat;
@@ -43,16 +43,23 @@ void Renderer::render(
 				 < (bx-cx)*(bx-cx)+(by-cy)*(by-cy);
 		});
 
-#pragma omp parallel for schedule(dynamic)
-	for (size_t t = 0; t < tiles.size(); ++t) {
-		const Tile& tile = tiles[t];
-		int tw = tile.x1 - tile.x0, th = tile.y1 - tile.y0;
-		std::vector<color> buf(tw * th);
+	// One pass over the whole image per sample, rather than every sample of a
+	// tile before moving on. The image then refines everywhere at once, which
+	// is what a viewport needs, and it can be stopped between passes with a
+	// complete estimate in hand. Each sample is keyed by (pixel, index), so
+	// the order the passes are walked in does not change a single value.
+	std::vector<color> accum((size_t)W * H);
 
-		for (int j = tile.y0; j < tile.y1; ++j) {
-			for (int i = tile.x0; i < tile.x1; ++i) {
-				color pixel(0,0,0);
-				for (int s = 0; s < samples_per_pixel; ++s) {
+	for (int s = 0; s < samples_per_pixel; ++s) {
+		if (cancel && cancel->load()) break;
+
+#pragma omp parallel for schedule(dynamic)
+		for (size_t t = 0; t < tiles.size(); ++t) {
+			if (cancel && cancel->load()) continue;
+			const Tile& tile = tiles[t];
+
+			for (int j = tile.y0; j < tile.y1; ++j) {
+				for (int i = tile.x0; i < tile.x1; ++i) {
 					sampler_begin_sample((uint32_t)(j*W + i), (uint32_t)s);
 					real u = (i + random_double()) / (W - 1);
 					real v = (j + random_double()) / (H - 1);
@@ -64,41 +71,42 @@ void Renderer::render(
 					else
 						sample = Li(r, background, world, lights, max_depth, env);
 
-					pixel += sample;
+					accum[(size_t)j*W + i] += sample;
+					sampler_end_sample();
 				}
-				sampler_end_sample();
-				pixel /= real(samples_per_pixel);
-				buf[(j-tile.y0)*tw + (i-tile.x0)] = pixel;
 			}
 		}
 
+		if (cancel && cancel->load()) break;
+
+		// The running mean, so a render stopped early still shows an unbiased
+		// estimate rather than a part-finished one.
 		{
 			std::lock_guard<std::mutex> lock(fb.mtx);
-			for (int j = tile.y0; j < tile.y1; ++j)
-				for (int i = tile.x0; i < tile.x1; ++i)
-					fb.set(i, j, buf[(j-tile.y0)*tw+(i-tile.x0)]);
-		}
+			for (int j = 0; j < H; ++j)
+				for (int i = 0; i < W; ++i) {
+					color c = accum[(size_t)j*W + i];
+					c /= real(s + 1);
+					fb.set(i, j, c);
+				}
 
-#pragma omp critical
-		{
-			++tiles_done;
-			std::cerr << "\rTiles: " << tiles_done << "/" << tiles.size() << std::flush;
-		}
-	}
-
-	// Merge the light-tracing splats; same 1/spp as the camera paths.
-	if (use_bdpt) {
-		std::lock_guard<std::mutex> lock(fb.mtx);
-		real inv_spp = 1.0 / real(samples_per_pixel);
-		for (int j = 0; j < H; ++j) {
-			for (int i = 0; i < W; ++i) {
-				size_t k = ((size_t)j*W + i)*3;
-				fb.set(i, j, fb.get(i, j)
-							 + color(splat.data[k+0], splat.data[k+1],
-									 splat.data[k+2]) * inv_spp);
+			// Same 1/n as the camera paths, applied to the light-tracing splats.
+			if (use_bdpt) {
+				real inv = 1.0 / real(s + 1);
+				for (int j = 0; j < H; ++j)
+					for (int i = 0; i < W; ++i) {
+						size_t k = ((size_t)j*W + i)*3;
+						fb.set(i, j, fb.get(i, j)
+									 + color(splat.data[k+0], splat.data[k+1],
+											 splat.data[k+2]) * inv);
+					}
 			}
 		}
+
+		if (verbose)
+			std::cerr << "\rPass: " << (s+1) << "/" << samples_per_pixel
+					  << std::flush;
 	}
 
-	std::cerr << "\nDone.\n";
+	if (verbose) std::cerr << "\nDone.\n";
 }

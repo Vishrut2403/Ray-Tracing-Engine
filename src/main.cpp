@@ -109,6 +109,24 @@ int main(int argc, char** argv)
 		camera cam = CameraFactory::build(config);
 		Viewport view(tris, viewport_camera_from(cam),
 					  config.width, config.height);
+
+		// Rendered mode traces whatever the viewport frames, at the window's
+		// own size, and is restarted from scratch whenever the view moves.
+		view.set_render([&](const camera& c, Framebuffer& f,
+							const std::atomic<bool>& cancel) {
+			if (use_gpu)
+				cuda_render(scene, f, c, config.background, config.samples,
+							config.max_depth, true, config.feature,
+							gpu_integrator, &cancel);
+			else {
+				Renderer r(config.samples, config.max_depth, config.tile_size);
+				r.verbose = false;
+				r.render(scene, f, c, config.background, &cancel);
+			}
+		});
+
+		if (has_flag(argc, argv, "--rendered")) view.set_rendered(true);
+
 		while (!view.should_close()) {
 			view.draw();
 			view.wait_events(1.0/60.0);

@@ -1,7 +1,13 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
+#include <functional>
+#include <memory>
+#include <thread>
+#include <vector>
 #include "geometry/tri_soup.h"
+#include "render/framebuffer.h"
 #include "viewer/viewport_camera.h"
 
 struct GLFWwindow;
@@ -24,6 +30,15 @@ public:
 	// Puts the whole scene in frame, as Home does in Blender.
 	void frame_all();
 
+	// Traces the framed view. Supplying this is what makes R available; the
+	// callback must return promptly once the flag is set.
+	using RenderFn = std::function<void(const camera&, Framebuffer&,
+										const std::atomic<bool>&)>;
+	void set_render(RenderFn fn);
+
+	// Opens straight into rendered mode; R still toggles from there.
+	void set_rendered(bool on);
+
 	ViewportCamera camera;
 	// Solid shading draws material colours; off gives Blender's flat grey.
 	bool           material_color = true;
@@ -38,6 +53,11 @@ private:
 	void on_key(int key, int action, int mods);
 	float aspect() const;
 
+	void draw_rendered();
+	void update_render();
+	void start_render();
+	void stop_render();
+
 	GLFWwindow*  window = nullptr;
 	unsigned int vao = 0, vbo = 0;
 	unsigned int shader_program = 0;
@@ -51,4 +71,20 @@ private:
 
 	Drag   drag = Drag::None;
 	double last_x = 0, last_y = 0;
+
+	// Rendered mode. The worker owns nothing the main thread touches except
+	// the framebuffer, which carries its own lock.
+	RenderFn                     render_fn;
+	bool                         rendered = false;
+	unsigned int                 quad_vao = 0, quad_vbo = 0;
+	unsigned int                 quad_program = 0, render_tex = 0;
+	std::unique_ptr<Framebuffer> render_fb;
+	std::vector<float>           snapshot;
+	std::thread                  worker;
+	std::atomic<bool>            cancel{false};
+	// The view the current render was started from, and the size it was
+	// started at. A render begins one frame after both stop changing.
+	ViewportCamera               rendered_view;
+	int                          render_w = 0, render_h = 0;
+	bool                         pending = false;
 };
