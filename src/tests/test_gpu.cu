@@ -38,8 +38,8 @@ __global__ void sample_kernel(const GpuMaterial* mats, int n_mats,
 	int m   = blockIdx.y;
 	if (m >= n_mats) return;
 
-	curandState rng;
-	curand_init(9876ULL, tid + m * 100003, 0, &rng);
+	GpuSampler rng;
+	curand_init(9876ULL, tid + m * 100003, 0, &rng.rng);
 
 	const vec3   n(0,0,1);
 	const double q_uniform = 1.0 / (4.0 * GPU_PI);

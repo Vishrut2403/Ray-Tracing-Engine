@@ -73,7 +73,7 @@ __device__ inline vec3 ggx_brdf(const GpuMaterial& mat,
 	return specular + ms + diffuse;
 }
 
-__device__ inline vec3 ggx_sample_vndf(const vec3& wo, real a, curandState* rng) {
+__device__ inline vec3 ggx_sample_vndf(const vec3& wo, real a, GpuSampler* rng) {
 	vec3 vh = unit_vector(vec3(a*wo.x(), a*wo.y(), wo.z()));
 
 	real lensq = vh.x()*vh.x() + vh.y()*vh.y();
@@ -128,7 +128,7 @@ __device__ inline real ggx_combined_pdf(const GpuMaterial& mat, const vec3& v,
 // wo points away from the surface.
 __device__ inline GpuBSDFSample ggx_sample_lobes(const GpuMaterial& mat,
 												  const vec3& wo, const vec3& n,
-												  curandState* rng) {
+												  GpuSampler* rng) {
 	GpuBSDFSample bs{}; bs.pdf = 0.0;
 	real a = (real)mat.roughness * (real)mat.roughness;
 	onb uvw; uvw.build_from_w(n);
@@ -217,7 +217,7 @@ __device__ inline bool rd_eval(const GpuMaterial& mat, const vec3& v,
 
 __device__ inline GpuBSDFSample rd_sample(const GpuMaterial& mat, const vec3& v,
 										   const vec3& n, bool front_face,
-										   curandState* rng) {
+										   GpuSampler* rng) {
 	GpuBSDFSample bs{}; bs.pdf = 0.0;
 	real alpha = (real)mat.roughness * (real)mat.roughness;
 	real eta   = front_face ? (1.0 / (real)mat.ir) : (real)mat.ir;
@@ -292,7 +292,7 @@ __device__ inline vec3 sss_brdf(const GpuMaterial& mat,
 __device__ inline GpuBSDFSample gpu_sample(const GpuMaterial& mat,
 											const ray& wo,
 											const GpuHitRecord& rec,
-											curandState* rng) {
+											GpuSampler* rng) {
 	GpuBSDFSample bs{};
 
 	if (mat.type == MatType::LAMBERTIAN) {
@@ -397,7 +397,7 @@ __device__ inline real gpu_pdf_dir(const GpuMaterial& mat, const vec3& wo,
 __device__ inline GpuBSDFSample gpu_sample_dir(const GpuMaterial& mat,
 												const vec3& wo,
 												const GpuHitRecord& rec,
-												curandState* rng) {
+												GpuSampler* rng) {
 	GpuBSDFSample bs{};
 	bs.pdf = 0.0;
 	const vec3& n = rec.normal;

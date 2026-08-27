@@ -43,7 +43,7 @@ __device__ inline real gpu_light_pdf(const GpuHittable* hittables,
 
 __device__ inline vec3 gpu_light_random(const GpuHittable* hittables,
 										 const int* light_ids, int n_lights,
-										 const vec3& origin, curandState* rng) {
+										 const vec3& origin, GpuSampler* rng) {
 	if (n_lights == 0) return vec3(1,0,0);
 	int idx = min((int)(rand_double(rng) * n_lights), n_lights-1);
 	const GpuHittable& lh = hittables[light_ids[idx]];
@@ -62,7 +62,7 @@ __device__ vec3 gpu_Li(
 	const GpuMaterial* materials,
 	const int* light_ids, int n_lights,
 	int max_depth,
-	curandState* rng,
+	GpuSampler* rng,
 	const GpuTriangle*   tris     = nullptr,
 	const GpuTriBVHNode* tri_bvh  = nullptr,
 	int                  tri_root = 0,
@@ -255,6 +255,9 @@ __device__ vec3 gpu_Li(
 
 __global__ void accumulate_kernel(
 	float* d_accum, int width, int height, int batch_spp, int max_depth,
+	// Which sample of the pixel this launch is, so the low-discrepancy
+	// sequence is keyed the same way the CPU keys it.
+	int sample_base,
 	GpuCamera cam, vec3 background,
 	const GpuHittable*   hittables,  int n_hittables,
 	const GpuMaterial*   materials,
@@ -272,10 +275,11 @@ __global__ void accumulate_kernel(
 	if (x >= width || y >= height) return;
 
 	int         id  = y * width + x;
-	curandState rng = rand_states[id];
+	GpuSampler rng; rng.rng = rand_states[id];
 
 	vec3 pixel(0,0,0);
 	for (int s = 0; s < batch_spp; ++s) {
+		gpu_sampler_begin(rng, (uint32_t)id, (uint32_t)(sample_base + s));
 		real u = (x + rand_double(&rng)) / (width  - 1);
 		real v = (y + rand_double(&rng)) / (height - 1);
 		ray r    = gpu_get_ray(cam, u, v, &rng);
@@ -288,7 +292,7 @@ __global__ void accumulate_kernel(
 	d_accum[id*3+0] += (float)pixel.x();
 	d_accum[id*3+1] += (float)pixel.y();
 	d_accum[id*3+2] += (float)pixel.z();
-	rand_states[id]  = rng;
+	rand_states[id]  = rng.rng;
 }
 
 // Firefly clamp, matching the ReSTIR shade kernel.
@@ -316,7 +320,7 @@ __global__ void accumulate_bdpt_kernel(
 	if (x >= width || y >= height) return;
 
 	int         id  = y * width + x;
-	curandState rng = rand_states[id];
+	GpuSampler rng; rng.rng = rand_states[id];
 
 	GpuCamAux aux = gpu_make_cam_aux(cam, width, height);
 
@@ -388,7 +392,7 @@ __global__ void accumulate_bdpt_kernel(
 	atomicAdd(&d_accum[id*3+0], (float)L.x());
 	atomicAdd(&d_accum[id*3+1], (float)L.y());
 	atomicAdd(&d_accum[id*3+2], (float)L.z());
-	rand_states[id] = rng;
+	rand_states[id] = rng.rng;
 }
 
 #undef RAY_OFFSET

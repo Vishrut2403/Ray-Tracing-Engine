@@ -1,10 +1,11 @@
 #pragma once
 
 #include <cstdint>
-#include <limits>
 #include "core/vec3.h"
 
-// Low-discrepancy sampling for the CPU integrators.
+// Low-discrepancy sampling. The sequence itself is pure integer arithmetic and
+// is marked HD so both backends walk exactly the same one; only the state below
+// it is per-backend, because thread_local has no meaning on the device.
 //
 // Samples come from a scrambled (0,2)-sequence taken in consecutive dimension
 // pairs, which stratifies far better than white noise for the same count. Call
@@ -16,18 +17,18 @@
 // scramble, so quality degrades gracefully towards white noise rather than
 // developing structure.
 
-inline uint32_t sampler_hash(uint32_t x) {
+HD inline uint32_t sampler_hash(uint32_t x) {
 	x ^= x >> 16; x *= 0x7feb352du;
 	x ^= x >> 15; x *= 0x846ca68bu;
 	x ^= x >> 16;
 	return x;
 }
 
-inline uint32_t sampler_mix(uint32_t a, uint32_t b) {
+HD inline uint32_t sampler_mix(uint32_t a, uint32_t b) {
 	return sampler_hash(a ^ (b * 0x9e3779b9u));
 }
 
-inline uint32_t sampler_reverse_bits(uint32_t n) {
+HD inline uint32_t sampler_reverse_bits(uint32_t n) {
 	n = (n << 16) | (n >> 16);
 	n = ((n & 0x00ff00ffu) << 8) | ((n & 0xff00ff00u) >> 8);
 	n = ((n & 0x0f0f0f0fu) << 4) | ((n & 0xf0f0f0f0u) >> 4);
@@ -37,7 +38,7 @@ inline uint32_t sampler_reverse_bits(uint32_t n) {
 }
 
 // Laine-Karras permutation: a cheap stand-in for a nested Owen scramble.
-inline uint32_t sampler_lk_permute(uint32_t x, uint32_t seed) {
+HD inline uint32_t sampler_lk_permute(uint32_t x, uint32_t seed) {
 	x += seed;
 	x ^= x * 0x6c50b47cu;
 	x ^= x * 0xb82f1e52u;
@@ -46,14 +47,14 @@ inline uint32_t sampler_lk_permute(uint32_t x, uint32_t seed) {
 	return x;
 }
 
-inline uint32_t sampler_owen(uint32_t x, uint32_t seed) {
+HD inline uint32_t sampler_owen(uint32_t x, uint32_t seed) {
 	x = sampler_reverse_bits(x);
 	x = sampler_lk_permute(x, seed);
 	return sampler_reverse_bits(x);
 }
 
 // Second dimension of the (0,2)-sequence, Gray-code form.
-inline uint32_t sampler_sobol2(uint32_t i, uint32_t scramble) {
+HD inline uint32_t sampler_sobol2(uint32_t i, uint32_t scramble) {
 	for (uint32_t v = 1u << 31; i; i >>= 1, v ^= v >> 1)
 		if (i & 1u) scramble ^= v;
 	return scramble;
@@ -91,10 +92,15 @@ inline void sampler_end_sample() { g_sampler.active = false; }
 // Samples must stay strictly below 1: callers scale them by a count and index
 // with the result, and in single precision the top of the 2^32 range rounds up
 // to exactly 1.0.
-inline real sampler_unit(uint32_t bits) {
+HD inline real sampler_unit(uint32_t bits) {
 	const real inv32 = (real)2.3283064365386963e-10;   // 1 / 2^32
-	const real hi    = (real)1.0
-					 - (real)0.5*std::numeric_limits<real>::epsilon();
+	// Spelled out rather than taken from <limits>, which device code cannot see.
+#ifdef RT_USE_DOUBLE
+	const real eps = (real)2.2204460492503131e-16;
+#else
+	const real eps = (real)1.1920928955078125e-7;
+#endif
+	const real hi = (real)1.0 - (real)0.5*eps;
 	real x = (real)bits * inv32;
 	return x < hi ? x : hi;
 }

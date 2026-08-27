@@ -10,7 +10,7 @@ struct GpuCamera {
 };
 
 __device__ inline ray gpu_get_ray(const GpuCamera& cam, real s, real t,
-								   curandState* rng) {
+								   GpuSampler* rng) {
 	vec3 rd     = cam.lens_radius * rand_in_unit_sphere(rng);
 	rd[2] = 0.0;
 	vec3 offset = cam.u * rd.x() + cam.v * rd.y();

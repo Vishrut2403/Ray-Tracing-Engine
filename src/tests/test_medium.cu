@@ -29,8 +29,8 @@ struct PhaseAcc {
 
 __global__ void phase_kernel(float g, int iters, PhaseAcc* acc) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	curandState rng;
-	curand_init(4242ULL, tid, 0, &rng);
+	GpuSampler rng;
+	curand_init(4242ULL, tid, 0, &rng.rng);
 
 	const vec3 fwd(0, 0, 1);
 	double norm = 0.0, mcos = 0.0, scos = 0.0;
@@ -75,8 +75,8 @@ struct MediumAcc {
 __global__ void medium_kernel(GpuMedium med, vec3 origin, vec3 dir,
 							   int iters, MediumAcc* acc) {
 	int tid = blockIdx.x * blockDim.x + threadIdx.x;
-	curandState rng;
-	curand_init(1357ULL, tid, 0, &rng);
+	GpuSampler rng;
+	curand_init(1357ULL, tid, 0, &rng.rng);
 
 	unsigned long long sc = 0;
 	double ws = 0.0, wt = 0.0;

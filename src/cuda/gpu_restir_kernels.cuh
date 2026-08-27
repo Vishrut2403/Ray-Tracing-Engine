@@ -29,7 +29,7 @@ __global__ void restir_initial_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	real u = (x + rand_double(&rng)) / (W-1);
 	real v = (y + rand_double(&rng)) / (H-1);
@@ -110,7 +110,7 @@ __global__ void restir_initial_kernel(
 		}
 	}
 
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }
 
 // Pass 1: Temporal reuse
@@ -130,7 +130,7 @@ __global__ void restir_temporal_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	Reservoir combined = res_cur[idx];
 	const GBufferPixel& gbuf = gbuffer_cur[idx];
@@ -167,7 +167,7 @@ __global__ void restir_temporal_kernel(
 	}
 
 	res_out[idx] = combined;
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }
 
 // Pass 2: Spatial reuse
@@ -191,12 +191,12 @@ __global__ void restir_spatial_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	const GBufferPixel& gbuf = gbuffer[idx];
 	output_res[idx] = input_res[idx];
 
-	if (!gbuf.valid) { rng_states[idx] = rng; return; }
+	if (!gbuf.valid) { rng_states[idx] = rng.rng; return; }
 
 	Reservoir combined = input_res[idx];
 
@@ -231,7 +231,7 @@ __global__ void restir_spatial_kernel(
 	}
 
 	output_res[idx] = combined;
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }
 
 // Pass 3: Final shading — ReSTIR DI + ReSTIR GI + volumetrics
@@ -259,7 +259,7 @@ __global__ void restir_shade_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	vec3 L(0,0,0);
 	const GBufferPixel& gbuf = gbuffer[idx];
@@ -272,7 +272,7 @@ __global__ void restir_shade_kernel(
 		d_accum[idx*3+0] += (float)emit.x();
 		d_accum[idx*3+1] += (float)emit.y();
 		d_accum[idx*3+2] += (float)emit.z();
-		rng_states[idx] = rng;
+		rng_states[idx] = rng.rng;
 		return;
 	}
 
@@ -494,5 +494,5 @@ __global__ void restir_shade_kernel(
 	d_accum[idx*3+0] += (float)L.x();
 	d_accum[idx*3+1] += (float)L.y();
 	d_accum[idx*3+2] += (float)L.z();
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }

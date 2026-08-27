@@ -32,7 +32,7 @@ struct GIReservoir {
 		W       = 0.0f;
 	}
 
-	__device__ bool update(const PathSample& x, float w, curandState* rng) {
+	__device__ bool update(const PathSample& x, float w, GpuSampler* rng) {
 		w_sum += w;
 		M     += 1;
 		if (rand_double(rng) < (real)(w / (w_sum + 1e-30f))) {
@@ -43,7 +43,7 @@ struct GIReservoir {
 	}
 
 	__device__ bool merge(const GIReservoir& other, float p_hat,
-						  curandState* rng) {
+						  GpuSampler* rng) {
 		int M_new = M + other.M;
 		bool sel  = update(other.y, p_hat * other.W * (float)other.M, rng);
 		M = M_new;

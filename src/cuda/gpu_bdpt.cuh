@@ -82,7 +82,7 @@ __device__ inline bool gpu_bdpt_visible(const GpuBDPTScene& sc,
 // Lights are axis-aligned xz rects, matching the rest of the GPU backend.
 
 __device__ inline bool gpu_sample_light_point(const GpuBDPTScene& sc,
-											   curandState* rng,
+											   GpuSampler* rng,
 											   vec3& pos, vec3& nrm, vec3& Le,
 											   real& pdf_pos) {
 	if (sc.n_lights <= 0) return false;
@@ -166,7 +166,7 @@ __device__ inline real gpu_vertex_pdf(const GpuBDPTScene& sc,
 __device__ inline int gpu_random_walk(const GpuBDPTScene& sc,
 									   ray r, vec3 beta, real pdf_dir,
 									   int max_verts, GpuPathVertex* path,
-									   int idx, curandState* rng) {
+									   int idx, GpuSampler* rng) {
 	real pdf_fwd = pdf_dir, pdf_rev = 0.0;
 
 	while (idx < max_verts) {
@@ -219,7 +219,7 @@ __device__ inline int gpu_generate_camera_subpath(const GpuBDPTScene& sc,
 												   const GpuCamera& cam,
 												   const ray& r, int max_verts,
 												   GpuPathVertex* path,
-												   curandState* rng) {
+												   GpuSampler* rng) {
 	if (max_verts <= 0) return 0;
 
 	GpuPathVertex& v0 = path[0];
@@ -245,7 +245,7 @@ __device__ inline int gpu_generate_camera_subpath(const GpuBDPTScene& sc,
 __device__ inline int gpu_generate_light_subpath(const GpuBDPTScene& sc,
 												  int max_verts,
 												  GpuPathVertex* path,
-												  curandState* rng) {
+												  GpuSampler* rng) {
 	if (max_verts <= 0) return 0;
 
 	vec3   lp, ln, Le;
@@ -364,7 +364,7 @@ __device__ inline vec3 gpu_connect_bdpt(const GpuBDPTScene& sc,
 										 const GpuCamera& cam,
 										 GpuPathVertex* camv, int t,
 										 GpuPathVertex* lightv, int s,
-										 curandState* rng,
+										 GpuSampler* rng,
 										 real& raster_x, real& raster_y) {
 	vec3          L(0,0,0);
 	GpuPathVertex sampled{};

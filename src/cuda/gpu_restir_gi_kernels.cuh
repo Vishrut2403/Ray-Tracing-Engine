@@ -27,13 +27,13 @@ __global__ void restir_gi_initial_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	GIReservoir& res = gi_reservoirs[idx];
 	res.init();
 
 	const GBufferPixel& gbuf = gbuffer[idx];
-	if (!gbuf.valid) { rng_states[idx] = rng; return; }
+	if (!gbuf.valid) { rng_states[idx] = rng.rng; return; }
 
 	const GpuMaterial& mat = materials[gbuf.mat_id];
 
@@ -48,7 +48,7 @@ __global__ void restir_gi_initial_kernel(
 		ray(gbuf.pos - gbuf.wo*(real)RAY_OFFSET, -gbuf.wo, 0.0),
 		gbuf_rec, &rng);
 
-	if (bs.pdf <= 0.0) { rng_states[idx] = rng; return; }
+	if (bs.pdf <= 0.0) { rng_states[idx] = rng.rng; return; }
 
 	GpuHitRecord irec;
 	ray indirect(gbuf.pos, bs.wi, 0.0);
@@ -123,7 +123,7 @@ __global__ void restir_gi_initial_kernel(
 		res.finalize(ph);   // already caps W and renormalizes w_sum
 	}
 
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }
 
 __global__ void restir_gi_temporal_kernel(
@@ -142,7 +142,7 @@ __global__ void restir_gi_temporal_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	GIReservoir combined = gi_cur[idx];
 	const GBufferPixel& gbuf = gbuffer_cur[idx];
@@ -200,7 +200,7 @@ __global__ void restir_gi_temporal_kernel(
 	}
 
 	gi_out[idx] = combined;
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }
 
 __global__ void restir_gi_spatial_kernel(
@@ -222,12 +222,12 @@ __global__ void restir_gi_spatial_kernel(
 	if (x >= W || y >= H) return;
 
 	int idx = y*W + x;
-	curandState rng = rng_states[idx];
+	GpuSampler rng; rng.rng = rng_states[idx];
 
 	const GBufferPixel& gbuf = gbuffer[idx];
 	output_res[idx] = input_res[idx];
 
-	if (!gbuf.valid) { rng_states[idx] = rng; return; }
+	if (!gbuf.valid) { rng_states[idx] = rng.rng; return; }
 
 	GIReservoir combined = input_res[idx];
 
@@ -261,5 +261,5 @@ __global__ void restir_gi_spatial_kernel(
 	}
 
 	output_res[idx] = combined;
-	rng_states[idx] = rng;
+	rng_states[idx] = rng.rng;
 }

@@ -30,7 +30,7 @@ __device__ inline int gpu_cdf_sample(const float* cdf, int n, float u) {
 	return lo > 0 ? lo - 1 : 0;
 }
 
-__device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, curandState* rng,
+__device__ inline vec3 gpu_env_sample(const GpuEnvMap& env, GpuSampler* rng,
 									   float& out_pdf) {
 	float r1 = rand_double(rng);
 	float r2 = rand_double(rng);

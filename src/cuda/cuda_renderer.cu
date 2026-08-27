@@ -58,6 +58,46 @@ static GpuCamera make_gpu_camera(const camera& cam) {
 	return gc;
 }
 
+struct CudaScene {
+	GpuScene   scene;
+	GpuMesh    mesh;
+	GpuEnvMap* d_env_map = nullptr;
+};
+
+CudaScene* cuda_scene_upload(const Scene& scene, const std::string& scene_name) {
+	CudaScene* out = new CudaScene();
+
+	if (scene_name == "bunny")
+		out->scene = SceneUploader::build_bunny_scene(scene_name, out->mesh);
+	else
+		out->scene = SceneUploader::build_and_upload(scene_name);
+
+	if (scene.env) out->d_env_map = upload_env_map(*scene.env);
+
+	printf("[Medium] active=%d sigma_t=(%.4f,%.4f,%.4f) g=%.2f\n",
+		out->scene.medium.active,
+		(float)out->scene.medium.sigma_t.x(),
+		(float)out->scene.medium.sigma_t.y(),
+		(float)out->scene.medium.sigma_t.z(),
+		out->scene.medium.g);
+
+	return out;
+}
+
+void cuda_scene_free(CudaScene* prepared) {
+	if (!prepared) return;
+	prepared->scene.free_device();
+	prepared->mesh.free_device();
+	if (prepared->d_env_map) {
+		GpuEnvMap host_env;
+		cudaMemcpy(&host_env, prepared->d_env_map, sizeof(GpuEnvMap),
+				   cudaMemcpyDeviceToHost);
+		host_env.free_device();
+		cudaFree(prepared->d_env_map);
+	}
+	delete prepared;
+}
+
 void cuda_render(const Scene& scene,
 				 Framebuffer& fb,
 				 const camera& cam,
@@ -66,29 +106,19 @@ void cuda_render(const Scene& scene,
 				 bool stage_frames,
 				 const std::string& scene_name,
 				 GpuIntegrator integrator,
-				 const std::atomic<bool>* cancel) {
-					
+				 const std::atomic<bool>* cancel,
+				 CudaScene* prepared) {
+
 	const int W = fb.get_width();
 	const int H = fb.get_height();
 	const int N = W * H;
 
-	GpuMesh  gpu_mesh;
-	GpuScene gpu_scene;
-	if (scene_name == "bunny")
-		gpu_scene = SceneUploader::build_bunny_scene(scene_name, gpu_mesh);
-	else
-		gpu_scene = SceneUploader::build_and_upload(scene_name);
-
-	GpuEnvMap* d_env_map = nullptr;
-	if (scene.env) d_env_map = upload_env_map(*scene.env);
-
-	// Debug: confirm medium state
-	printf("[Medium] active=%d sigma_t=(%.4f,%.4f,%.4f) g=%.2f\n",
-		gpu_scene.medium.active,
-		(float)gpu_scene.medium.sigma_t.x(),
-		(float)gpu_scene.medium.sigma_t.y(),
-		(float)gpu_scene.medium.sigma_t.z(),
-		gpu_scene.medium.g);
+	// Only an upload this call made is this call's to free.
+	CudaScene* owned = prepared ? nullptr
+								: cuda_scene_upload(scene, scene_name);
+	CudaScene& prep      = prepared ? *prepared : *owned;
+	GpuScene&  gpu_scene = prep.scene;
+	GpuEnvMap* d_env_map = prep.d_env_map;
 
 	cudaStream_t stream;
 	cudaStreamCreate(&stream);
@@ -190,14 +220,7 @@ void cuda_render(const Scene& scene,
 		cudaFree(d_accum);
 		cudaFree(d_states);
 		cudaStreamDestroy(stream);
-		gpu_scene.free_device();
-		if (d_env_map) {
-			GpuEnvMap host_env;
-			cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap),
-					   cudaMemcpyDeviceToHost);
-			host_env.free_device();
-			cudaFree(d_env_map);
-		}
+		cuda_scene_free(owned);
 		return;
 	}
 
@@ -216,7 +239,7 @@ void cuda_render(const Scene& scene,
 		for (int s = 0; s < spp; ++s) {
 			if (cancel && cancel->load()) { spp = s > 0 ? s : 1; break; }
 			accumulate_kernel<<<blocks,threads,0,stream>>>(
-				d_accum, W, H, 1, max_depth, gpu_cam,
+				d_accum, W, H, 1, max_depth, s, gpu_cam,
 				vec3(background.x(), background.y(), background.z()),
 				gpu_scene.d_hittables, gpu_scene.n_hittables,
 				gpu_scene.d_materials,
@@ -252,15 +275,7 @@ void cuda_render(const Scene& scene,
 		cudaFree(d_gi_initial); cudaFree(d_gi_temporal);
 		cudaFree(d_gi_spatial); cudaFree(d_gi_prev);
 		cudaStreamDestroy(stream);
-		gpu_scene.free_device();
-		gpu_mesh.free_device();
-		if (d_env_map) {
-			GpuEnvMap host_env;
-			cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap),
-					   cudaMemcpyDeviceToHost);
-			host_env.free_device();
-			cudaFree(d_env_map);
-		}
+		cuda_scene_free(owned);
 		return;
 	}
 
@@ -414,14 +429,5 @@ void cuda_render(const Scene& scene,
 	cudaFree(d_gi_spatial);
 	cudaFree(d_gi_prev);
 	cudaStreamDestroy(stream);
-	gpu_scene.free_device();
-	gpu_mesh.free_device();
-
-	if (d_env_map) {
-		GpuEnvMap host_env;
-		cudaMemcpy(&host_env, d_env_map, sizeof(GpuEnvMap),
-				   cudaMemcpyDeviceToHost);
-		host_env.free_device();
-		cudaFree(d_env_map);
-	}
+	cuda_scene_free(owned);
 }

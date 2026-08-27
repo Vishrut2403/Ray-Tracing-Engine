@@ -35,7 +35,7 @@ struct Reservoir {
 		W     = 0.0f;
 	}
 
-	__device__ bool update(const LightSample& x, float w, curandState* rng) {
+	__device__ bool update(const LightSample& x, float w, GpuSampler* rng) {
 		w_sum += w;
 		M     += 1;
 		if (rand_double(rng) < (real)(w / (w_sum + 1e-30f))) {
@@ -45,7 +45,7 @@ struct Reservoir {
 		return false;
 	}
 
-	__device__ bool merge(const Reservoir& other, float p_hat, curandState* rng) {
+	__device__ bool merge(const Reservoir& other, float p_hat, GpuSampler* rng) {
 		int M_new = M + other.M;
 		bool sel = update(other.y, p_hat * other.W * (float)other.M, rng);
 		M = M_new;
@@ -81,7 +81,7 @@ __device__ inline LightSample sample_light(
 	const GpuHittable* hittables,
 	const GpuMaterial* materials,
 	const int* light_ids, int n_lights,
-	curandState* rng
+	GpuSampler* rng
 ) {
 	LightSample s;
 	s.light_id = -1;

@@ -15,7 +15,7 @@ __device__ inline float hg_phase(float cos_theta, float g) {
 	return (1.0f - g2) / (4.0f * (float)GPU_PI * den * sqrtf(den) + 1e-7f);
 }
 
-__device__ inline vec3 hg_sample(const vec3& wo, float g, curandState* rng) {
+__device__ inline vec3 hg_sample(const vec3& wo, float g, GpuSampler* rng) {
 	float cos_theta;
 
 	if (fabsf(g) < 1e-4f) {
@@ -81,7 +81,7 @@ __device__ inline vec3 transmittance_seg(const GpuMedium& med, const ray& r,
 }
 
 __device__ inline real sample_free_flight(const GpuMedium& med,
-											 curandState* rng) {
+											 GpuSampler* rng) {
 	float sigma_t_avg = (float)(
 		med.sigma_t.x() + med.sigma_t.y() + med.sigma_t.z()) / 3.0f;
 	if (sigma_t_avg < 1e-8f) return 1e30;
@@ -101,7 +101,7 @@ __device__ inline MediumSample sample_medium(
 	const GpuMedium& med,
 	const ray&       r,
 	real           t_surface,
-	curandState*     rng)
+	GpuSampler*     rng)
 {
 	MediumSample ms;
 	ms.scattered  = false;

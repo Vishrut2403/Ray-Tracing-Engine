@@ -11,6 +11,7 @@
 #include "viewer/viewport.h"
 #include "cuda/cuda_renderer.h"
 
+#include <memory>
 #include <thread>
 #include <atomic>
 #include <mutex>
@@ -107,6 +108,15 @@ int main(int argc, char** argv)
 		std::cerr << "[viewport] " << tris.size() << " triangles\n";
 
 		camera cam = CameraFactory::build(config);
+
+		// Uploaded once and held for the window's lifetime: the view restarts
+		// the render on every nudge, and re-uploading a mesh scene each time
+		// costs more than the render. Declared ahead of the window so the
+		// window's destructor joins the render thread before this goes.
+		std::unique_ptr<CudaScene, void(*)(CudaScene*)> gpu_prepared(
+			use_gpu ? cuda_scene_upload(scene, config.feature) : nullptr,
+			cuda_scene_free);
+
 		Viewport view(tris, viewport_camera_from(cam),
 					  config.width, config.height);
 
@@ -117,7 +127,7 @@ int main(int argc, char** argv)
 			if (use_gpu)
 				cuda_render(scene, f, c, config.background, config.samples,
 							config.max_depth, true, config.feature,
-							gpu_integrator, &cancel);
+							gpu_integrator, &cancel, gpu_prepared.get());
 			else {
 				Renderer r(config.samples, config.max_depth, config.tile_size);
 				r.verbose = false;
