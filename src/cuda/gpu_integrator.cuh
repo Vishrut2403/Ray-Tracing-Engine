@@ -305,6 +305,8 @@ __device__ inline vec3 bdpt_clamp(vec3 c) {
 
 __global__ void accumulate_bdpt_kernel(
 	float* d_accum, int width, int height, int max_depth,
+	// Which sample of the pixel this launch is, keyed the way the CPU keys it.
+	int sample_base,
 	GpuCamera cam,
 	const GpuHittable*   hittables,  int n_hittables,
 	const GpuMaterial*   materials,
@@ -321,6 +323,11 @@ __global__ void accumulate_bdpt_kernel(
 
 	int         id  = y * width + x;
 	GpuSampler rng; rng.rng = rand_states[id];
+	// One key for the whole sample. The camera walk, the light walk and the
+	// connections then take consecutive dimensions, which is the order the CPU
+	// draws them in; the per-pixel scramble is what keeps neighbouring pixels'
+	// light subpaths from correlating.
+	gpu_sampler_begin(rng, (uint32_t)id, (uint32_t)sample_base);
 
 	GpuCamAux aux = gpu_make_cam_aux(cam, width, height);
 

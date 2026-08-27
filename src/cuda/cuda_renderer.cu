@@ -185,7 +185,7 @@ void cuda_render(const Scene& scene,
 		for (int s = 0; s < spp; ++s) {
 			if (cancel && cancel->load()) { spp = s > 0 ? s : 1; break; }
 			accumulate_bdpt_kernel<<<blocks,threads,0,stream>>>(
-				d_accum, W, H, max_depth,
+				d_accum, W, H, max_depth, s,
 				gpu_cam,
 				gpu_scene.d_hittables, gpu_scene.n_hittables,
 				gpu_scene.d_materials,

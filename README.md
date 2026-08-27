@@ -57,7 +57,7 @@ Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaul
 - Spheres, boxes, axis-aligned rects, moving spheres, transforms, constant-density media
 
 ### Sampling and Precision
-- Owen-scrambled (0,2)-sequence low-discrepancy sampler on both backends. The sequence itself is shared integer arithmetic, so the CPU and the GPU path tracer walk the same one; only the state around it differs, since `thread_local` means nothing on the device. GPU BDPT and ReSTIR still draw from cuRAND — their sampler carries both and falls back when it has not been keyed onto the sequence. Worth 19–42% relMSE on the GPU against the white noise it replaced, for 9–15% more render time
+- Owen-scrambled (0,2)-sequence low-discrepancy sampler on both backends. The sequence itself is shared integer arithmetic, so the CPU and the GPU path tracer walk the same one; only the state around it differs, since `thread_local` means nothing on the device. GPU ReSTIR still draws from cuRAND — the sampler carries both and falls back when a kernel has not been keyed onto the sequence. Against the white noise it replaced: 19–42% less relMSE on the GPU path tracer for 9–15% more render time, and 30–40% on GPU BDPT for 10%
 - Every sampling routine draws a fixed number of dimensions in a fixed order. The rejection loops these replaced drew a variable number, sliding every later dimension along by an amount that changed from path to path, and a low-discrepancy sequence read at shifting dimensions is worth no more than white noise. Measured at 13–19% lower relMSE on `cornell`, `ggx` and `glass` (paired bootstrap over pixels, 95% CI)
 - Reproducible renders — the BVH split axis, every camera ray, and every photon are keyed by index rather than by a `random_device` seed and the OpenMP schedule, so the same inputs give the same image on every run
 - Single precision throughout by default — FP64 runs at 1/64 rate on consumer NVIDIA parts, and single precision is ~4× faster on the GPU here at no measurable cost in accuracy. Build with `-DRT_DOUBLE=ON` for a double-precision reference.
@@ -297,7 +297,7 @@ Extended beyond the book:
 | Double → single precision, with a double build kept as reference | 4× on the GPU; the double build is how the float build is checked |
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
 | Rejection sampling → analytic inversion | A varying dimension count is what costs that sequence its stratification |
-| cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE for 9–15% more time, so ~1.5× to a given noise level |
+| cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE on the path tracer, 30–40% on BDPT, for ~10% more time |
 | Ad-hoc eyeballing → 688-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
@@ -312,9 +312,9 @@ Extended beyond the book:
 - [x] Progressive photon mapping
 - [x] ReSTIR direct and indirect lighting
 - [x] EXR output via tinyexr
-- [x] Port the low-discrepancy sampler to the GPU path tracer
+- [x] Port the low-discrepancy sampler to the GPU path tracer and BDPT
 - [x] Hoist the GPU scene upload out of `cuda_render` so a viewport render can restart without paying for it
-- [ ] Key GPU BDPT and ReSTIR onto the sequence too; both still draw from cuRAND
+- [ ] Decide whether GPU ReSTIR should be keyed onto the sequence — its resampling reads neighbouring reservoirs, so it is not a given that a per-pixel sequence helps there
 - [ ] Cut the mesh scene build, which is most of the wall clock on `bunny` (1.18s of 1.92s on the CPU, 2.02s of 2.23s on the GPU)
 - [ ] OptiX backend (hardware RT cores)
 - [ ] Light trees for many-light scenes
