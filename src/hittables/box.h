@@ -67,6 +67,10 @@ public:
 		return true;
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		sides.tessellate(out);
+	}
+
 private:
 	point3 box_min;
 	point3 box_max;

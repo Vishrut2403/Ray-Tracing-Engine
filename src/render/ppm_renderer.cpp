@@ -14,6 +14,16 @@
 
 static constexpr real pi_val = 3.14159265358979323846;
 
+// Keys every camera ray and photon to its own index instead of the thread's
+// RNG, which was seeded from random_device and handed out work by a dynamic
+// schedule -- so no two runs drew the same photons.
+namespace {
+struct SampleScope {
+	SampleScope(uint32_t key, uint32_t index) { sampler_begin_sample(key, index); }
+	~SampleScope() { sampler_end_sample(); }
+};
+}
+
 static color trace_camera_ray(
 	const ray& r,
 	const std::shared_ptr<hittable>& world,
@@ -121,6 +131,7 @@ void PPMRenderer::render(
 #pragma omp parallel for schedule(dynamic,8)
 		for (int j=0;j<H;++j) for (int i=0;i<W;++i) {
 			int idx=j*W+i;
+			SampleScope ss((uint32_t)idx, (uint32_t)iter);
 			pixels[idx].vp.valid=false;
 			color dir = trace_camera_ray(
 				cam.get_ray((i+random_double())/(W-1),
@@ -148,9 +159,12 @@ void PPMRenderer::render(
 		}
 
 		// The grid and every VisiblePoint are read-only here, so the only shared
-		// writes are phi/M (atomic below). random_double() is thread_local.
+		// writes are phi/M (atomic below). The sampler state is thread_local.
 #pragma omp parallel for schedule(dynamic,1024)
 		for (int pi=0;pi<photons_per_iter;++pi){
+			// Photons and camera rays must not share a key, or the two passes
+			// would walk the same sequence.
+			SampleScope ss((uint32_t)pi + 0x8000000u, (uint32_t)iter);
 			vec3   ng_unused;
 			point3 lpos = light_obj->sample_area(random_double(),
 												 random_double(), ng_unused);

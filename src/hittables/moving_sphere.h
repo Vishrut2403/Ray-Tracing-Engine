@@ -89,6 +89,11 @@ public:
 		return true;
 	}
 
+	// Drawn at the shutter open; the viewport has no notion of shutter time.
+	virtual void tessellate(TriSoup& out) const override {
+		tri_add_uv_sphere(out, center0, radius, mat_ptr);
+	}
+
 public:
 	point3 center0, center1;
 	real time0, time1;

@@ -82,9 +82,6 @@ int main(int argc, char** argv)
 	bool use_denoise     = has_flag(argc, argv, "--denoise");
 	bool want_restir     = get_flag_value(argc, argv, "--integrator", "restir");
 
-	if (config.feature == "furnace")
-		apply_furnace_preset(config);
-
 	// The GPU covers only a subset of scenes. An unknown name used to fall
 	// through to a Cornell box and look like it worked; say so and use the CPU.
 	if (use_gpu && use_ppm) {

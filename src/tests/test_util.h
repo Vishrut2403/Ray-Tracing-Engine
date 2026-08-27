@@ -19,3 +19,4 @@ void check(bool ok, const std::string& what, double got, double want, double tol
 void run_gpu_tests();
 void run_medium_tests();
 void run_render_tests();
+void run_tessellate_tests(bool quick);

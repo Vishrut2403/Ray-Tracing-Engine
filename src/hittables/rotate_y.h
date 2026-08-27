@@ -101,6 +101,23 @@ point3 max(-infinity, -infinity, -infinity);
 		return hasbox;
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		size_t begin = out.size();
+		ptr->tessellate(out);
+		// The same object-to-world rotation hit() applies to rec.p and
+		// rec.normal on the way back out.
+		auto rot = [&](vec3& v) {
+			real x =  cos_theta*v[0] + sin_theta*v[2];
+			real z = -sin_theta*v[0] + cos_theta*v[2];
+			v[0] = x; v[2] = z;
+		};
+		for (size_t i = begin; i < out.size(); ++i) {
+			Tri& t = out[i];
+			rot(t.v0); rot(t.v1); rot(t.v2);
+			rot(t.n0); rot(t.n1); rot(t.n2);
+		}
+	}
+
 private:
 	std::shared_ptr<hittable> ptr;
 	real sin_theta;

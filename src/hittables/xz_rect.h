@@ -123,6 +123,12 @@ public:
 			&& p.z() >= z0-1e-3 && p.z() <= z1+1e-3;
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		tri_add_quad(out, point3(x0,k,z0), point3(x0,k,z1),
+						  point3(x1,k,z1), point3(x1,k,z0),
+					 vec3(0,1,0), mp);
+	}
+
 private:
 	std::shared_ptr<material> mp;
 	real x0, x1, z0, z1, k;

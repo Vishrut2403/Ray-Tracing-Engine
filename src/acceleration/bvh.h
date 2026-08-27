@@ -19,7 +19,12 @@ public:
 		real time0,
 		real time1
 	) {
-		int axis = random_int(0, 2);
+		// Longest axis of the span, not a random one. A random axis reseeded
+		// per process made the tree differ between runs, and traversal order is
+		// not neutral here: constant_medium draws its scattering distance
+		// inside hit(), so a different order shifts every later sampler
+		// dimension along that path.
+		int axis = longest_axis(objects, start, end, time0, time1);
 		auto comparator = (axis == 0) ? box_x_compare
 						: (axis == 1) ? box_y_compare
 									  : box_z_compare;
@@ -93,12 +98,40 @@ public:
 		return true;
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		// A leaf holding one object sets left and right to it, so walking both
+		// unconditionally would emit that object's triangles twice.
+		if (left) left->tessellate(out);
+		if (right && right != left) right->tessellate(out);
+	}
+
 public:
 	std::shared_ptr<hittable> left;
 	std::shared_ptr<hittable> right;
 	aabb box;
 
 private:
+	static int longest_axis(
+		const std::vector<std::shared_ptr<hittable>>& objects,
+		size_t start, size_t end, real time0, real time1
+	) {
+		aabb span;
+		bool have = false;
+		for (size_t i = start; i < end; ++i) {
+			aabb b;
+			if (!objects[i]->bounding_box(time0, time1, b)) continue;
+			span = have ? surrounding_box(span, b) : b;
+			have = true;
+		}
+		if (!have) return 0;
+
+		real ex = span.axis_interval(0).max - span.axis_interval(0).min;
+		real ey = span.axis_interval(1).max - span.axis_interval(1).min;
+		real ez = span.axis_interval(2).max - span.axis_interval(2).min;
+		if (ex >= ey && ex >= ez) return 0;
+		return ey >= ez ? 1 : 2;
+	}
+
 	static bool box_compare(
 		const std::shared_ptr<hittable> a,
 		const std::shared_ptr<hittable> b,

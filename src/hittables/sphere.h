@@ -145,6 +145,10 @@ public:
 		return uvw.local(local_dir);
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		tri_add_uv_sphere(out, center, radius, mat_ptr);
+	}
+
 public:
 	point3 center;
 	real radius;

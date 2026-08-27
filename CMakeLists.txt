@@ -1,6 +1,13 @@
 cmake_minimum_required(VERSION 3.18)
 project(RayTracer LANGUAGES C CXX CUDA)
 
+# Without this an unset CMAKE_BUILD_TYPE gives no -O flag at all, and the CPU
+# backend runs 2.4-5.2x slower.
+get_property(_multi_config GLOBAL PROPERTY GENERATOR_IS_MULTI_CONFIG)
+if(NOT _multi_config AND NOT CMAKE_BUILD_TYPE)
+    set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
+endif()
+
 set(CMAKE_BUILD_PARALLEL_LEVEL $ENV{NPROC})
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -38,7 +45,8 @@ file(GLOB_RECURSE CUDA_SRC CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/src/*.cu)
 set(TEST_SRC ${CMAKE_SOURCE_DIR}/src/tests/test_main.cpp
              ${CMAKE_SOURCE_DIR}/src/tests/test_gpu.cu
              ${CMAKE_SOURCE_DIR}/src/tests/test_medium.cu
-             ${CMAKE_SOURCE_DIR}/src/tests/test_render.cpp)
+             ${CMAKE_SOURCE_DIR}/src/tests/test_render.cpp
+             ${CMAKE_SOURCE_DIR}/src/tests/test_tessellate.cpp)
 list(FILTER CPU_SRC  EXCLUDE REGEX ".*/tests/.*")
 list(FILTER CUDA_SRC EXCLUDE REGEX ".*/tests/.*")
 set(CORE_SRC ${CPU_SRC})

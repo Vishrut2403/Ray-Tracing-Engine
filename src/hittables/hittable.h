@@ -4,6 +4,7 @@
 #include "core/ray.h"
 #include "acceleration/aabb.h"
 #include "core/interval.h"
+#include "geometry/tri_soup.h"
 class material;
 struct hit_record {
 	point3 p;
@@ -50,6 +51,10 @@ public:
 
 	// Recovers the area density of a light vertex a camera subpath landed on.
 	virtual bool contains_point(const point3&) const { return false; }
+
+	// Display geometry for the viewport. Primitives with nothing to draw
+	// leave the soup untouched.
+	virtual void tessellate(TriSoup&) const {}
 
 	virtual ~hittable() = default;
 };

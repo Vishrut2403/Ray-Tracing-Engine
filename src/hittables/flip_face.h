@@ -44,6 +44,17 @@ public:
 		return ptr->contains_point(p);
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		size_t begin = out.size();
+		ptr->tessellate(out);
+		for (size_t i = begin; i < out.size(); ++i) {
+			Tri& t = out[i];
+			std::swap(t.v1, t.v2);
+			std::swap(t.n1, t.n2);
+			t.n0 = -t.n0; t.n1 = -t.n1; t.n2 = -t.n2;
+		}
+	}
+
 public:
 	std::shared_ptr<hittable> ptr;
 };

@@ -51,6 +51,14 @@ public:
 
 		return true;
 	}
+	virtual void tessellate(TriSoup& out) const override {
+		size_t begin = out.size();
+		ptr->tessellate(out);
+		for (size_t i = begin; i < out.size(); ++i) {
+			out[i].v0 += offset; out[i].v1 += offset; out[i].v2 += offset;
+		}
+	}
+
 private:
 	std::shared_ptr<hittable> ptr;
 	vec3 offset;

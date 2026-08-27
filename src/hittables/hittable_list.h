@@ -24,6 +24,10 @@ public:
 		objects.push_back(object);
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		for (const auto& o : objects) o->tessellate(out);
+	}
+
 	virtual bool hit(
 		const ray& r,
 		const interval& ray_t,

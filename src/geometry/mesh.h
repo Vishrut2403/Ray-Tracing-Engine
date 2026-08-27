@@ -31,6 +31,10 @@ public:
 		n0 = n1 = n2 = fn;
 	}
 
+	virtual void tessellate(TriSoup& out) const override {
+		tri_add(out, v0, v1, v2, n0, n1, n2, mat);
+	}
+
 	virtual bool hit(const ray& r, const interval& ray_t,
 					 hit_record& rec) const override {
 		const real eps = 1e-8;

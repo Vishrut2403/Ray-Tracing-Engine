@@ -26,6 +26,11 @@ RenderConfig parse_cli(int argc, char** argv)
 	if (argc >= 3 && argv[2][0] != '-')
 		config.feature = argv[2];
 
+	// Presets are defaults, so they go in before the flag loop below and an
+	// explicit --width/--spp/--depth still wins.
+	if (config.feature == "furnace")
+		apply_furnace_preset(config);
+
 	for (int i = 2; i < argc; ++i) {
 		std::string a = argv[i];
 		if      ((a == "--width"  || a == "-w") && i+1 < argc) config.width     = std::atoi(argv[++i]);

@@ -13,6 +13,14 @@ public:
 	std::shared_ptr<material> phase_function;
 	real neg_inv_density;
 
+	// A medium has no surface, so its boundary stands in for it.
+	virtual void tessellate(TriSoup& out) const override {
+		size_t begin = out.size();
+		boundary->tessellate(out);
+		for (size_t i = begin; i < out.size(); ++i)
+			out[i].translucent = true;
+	}
+
 	constant_medium(std::shared_ptr<hittable> b,
 					real density,
 					std::shared_ptr<texture> tex,
