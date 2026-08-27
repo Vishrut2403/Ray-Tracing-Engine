@@ -21,3 +21,4 @@ void run_medium_tests();
 void run_render_tests();
 void run_tessellate_tests(bool quick);
 void run_viewport_tests(bool quick);
+void run_sampler_tests();

@@ -133,9 +133,9 @@ void PPMRenderer::render(
 			int idx=j*W+i;
 			SampleScope ss((uint32_t)idx, (uint32_t)iter);
 			pixels[idx].vp.valid=false;
+			real ju = random_double(), jv = random_double();
 			color dir = trace_camera_ray(
-				cam.get_ray((i+random_double())/(W-1),
-							(j+random_double())/(H-1)),
+				cam.get_ray((i+ju)/(W-1), (j+jv)/(H-1)),
 				world, env, background, max_depth, pixels[idx].vp);
 			pixels[idx].direct = pixels[idx].direct + dir;
 		}
@@ -166,8 +166,8 @@ void PPMRenderer::render(
 			// would walk the same sequence.
 			SampleScope ss((uint32_t)pi + 0x8000000u, (uint32_t)iter);
 			vec3   ng_unused;
-			point3 lpos = light_obj->sample_area(random_double(),
-												 random_double(), ng_unused);
+			real lu = random_double(), lv = random_double();
+			point3 lpos = light_obj->sample_area(lu, lv, ng_unused);
 
 			onb uvw; uvw.build_from_w(light_n);
 			vec3 emit=uvw.local(random_cosine_direction());

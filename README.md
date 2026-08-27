@@ -58,6 +58,7 @@ Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaul
 
 ### Sampling and Precision
 - Owen-scrambled (0,2)-sequence low-discrepancy sampler on the CPU (the GPU still uses cuRAND white noise)
+- Every sampling routine draws a fixed number of dimensions in a fixed order. The rejection loops these replaced drew a variable number, sliding every later dimension along by an amount that changed from path to path, and a low-discrepancy sequence read at shifting dimensions is worth no more than white noise. Measured at 13–19% lower relMSE on `cornell`, `ggx` and `glass` (paired bootstrap over pixels, 95% CI)
 - Reproducible renders — the BVH split axis, every camera ray, and every photon are keyed by index rather than by a `random_device` seed and the OpenMP schedule, so the same inputs give the same image on every run
 - Single precision throughout by default — FP64 runs at 1/64 rate on consumer NVIDIA parts, and single precision is ~4× faster on the GPU here at no measurable cost in accuracy. Build with `-DRT_DOUBLE=ON` for a double-precision reference.
 
@@ -252,8 +253,9 @@ The GPU implements `cornell`, `furnace`, `ggx`, `hdr`, `bunny`, `glass`, `causti
 ./build/tests
 ```
 
-295 checks covering:
+688 checks covering:
 
+- **Sampling routines** — each draws a fixed, order-stable number of dimensions, and the distributions are checked by equal-measure binning: equal-area rings and sectors on the disk, equal-solid-angle bands on the sphere, equal-volume shells in the ball
 - **Analytic BSDF identities** — white furnace (`E[f·cos/pdf]` matches the known albedo and never exceeds 1), Helmholtz reciprocity, PDF normalization, and the `f·cos/pdf = G2/G1` cancellation for VNDF sampling
 - **Energy conservation** — the closed furnace, where `L = Le/(1-rho)` must converge to exactly 1 across the whole image, catches throughput and PDF bugs that the open furnace misses
 - **Cross-backend agreement** — CPU and GPU means must agree on `cornell`, `glass`, and `ggx`
@@ -282,7 +284,8 @@ Extended beyond the book:
 | One integrator → PT, BDPT, PPM, ReSTIR | Caustics and SDS paths need estimators the book's approach cannot reach |
 | Double → single precision, with a double build kept as reference | 4× on the GPU; the double build is how the float build is checked |
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
-| Ad-hoc eyeballing → 295-check suite | Catches PDF and throughput bugs before they show visually |
+| Rejection sampling → analytic inversion | A varying dimension count is what costs that sequence its stratification |
+| Ad-hoc eyeballing → 688-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
 
@@ -297,8 +300,8 @@ Extended beyond the book:
 - [x] ReSTIR direct and indirect lighting
 - [x] EXR output via tinyexr
 - [ ] Port the low-discrepancy sampler to the GPU (still cuRAND white noise there)
-- [ ] Fixed per-bounce sampler dimension allocation, replacing the global counter
-- [ ] Profile and cut the CPU hot path (virtual dispatch through `shared_ptr` per intersection)
+- [ ] Hoist the GPU scene upload out of `cuda_render`, which currently rebuilds it per call
+- [ ] Cut the mesh scene build, which is most of the wall clock on `bunny` (1.18s of 1.92s on the CPU, 2.02s of 2.23s on the GPU)
 - [ ] OptiX backend (hardware RT cores)
 - [ ] Light trees for many-light scenes
 - [ ] Spectral rendering (hero wavelength)

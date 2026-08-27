@@ -80,6 +80,14 @@ inline void sampler_begin_sample(uint32_t pixel, uint32_t index) {
 
 inline void sampler_end_sample() { g_sampler.active = false; }
 
+// Handing each bounce a fixed block of dimensions was tried, so that a given
+// decision always read the same dimension whatever the path before it did. It
+// was measured worse: at 32 spp on cornell it cost 16-20% relMSE at every block
+// size from 4 to 12, and gained nothing significant on ggx or glass. The reason
+// is above -- pairs past the first few are decorrelated only by their scramble,
+// so a fixed block pushes every decision into a higher, weaker dimension, and
+// that costs more than the alignment is worth. Dimensions stay consecutive.
+
 // Samples must stay strictly below 1: callers scale them by a count and index
 // with the result, and in single precision the top of the 2^32 range rounds up
 // to exactly 1.0.

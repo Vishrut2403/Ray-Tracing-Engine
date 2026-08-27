@@ -165,7 +165,10 @@ static bool sample_light_point(const std::shared_ptr<hittable_list>& lights,
 
 	const auto& L = lights->objects[li];
 	vec3 ng;
-	pos = L->sample_area(random_double(), random_double(), ng);
+	// Separate statements: the order of a call's arguments is unspecified, and
+	// these two draws are consecutive dimensions of the sample sequence.
+	real su = random_double(), sv = random_double();
+	pos = L->sample_area(su, sv, ng);
 	if (!probe_emission(world, pos, ng, nrm, Le)) return false;
 
 	real a = L->area();

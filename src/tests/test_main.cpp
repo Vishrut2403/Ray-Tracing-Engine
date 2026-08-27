@@ -267,6 +267,7 @@ int main(int argc, char** argv) {
 
 	test_ggx_energy_compensation();
 
+	run_sampler_tests();
 	run_viewport_tests(quick);
 	run_tessellate_tests(quick);
 	run_gpu_tests();
