@@ -23,6 +23,23 @@ void check(bool ok, const std::string& what, double got, double want,
 				what.c_str(), got, want, tol);
 }
 
+// These checks used to draw from a random_device-seeded mt19937, so they were
+// the one part of the suite that did not repeat -- and the ggx energy bound,
+// whose margin is four standard errors of its own estimate, tripped on noise
+// about one run in thirty. Keying every draw by (configuration, iteration)
+// makes them repeat exactly, and routes them through the stratified sampler,
+// which tightens the estimates as well.
+static uint32_t draw_key(const std::string& name, int salt) {
+	uint32_t h = 2166136261u;
+	for (char c : name) { h ^= (unsigned char)c; h *= 16777619u; }
+	return h ^ ((uint32_t)salt * 0x9e3779b9u);
+}
+
+struct DrawScope {
+	DrawScope(uint32_t key, uint32_t i) { sampler_begin_sample(key, i); }
+	~DrawScope() { sampler_end_sample(); }
+};
+
 static hit_record make_rec(const vec3& n, bool front_face = true) {
 	hit_record rec;
 	rec.p = point3(0,0,0);
@@ -45,6 +62,7 @@ static void test_sample_pdf_agree(const std::string& name,
 	int compared = 0;
 
 	for (int i = 0; i < N; ++i) {
+		DrawScope draw(draw_key(name, 1), (uint32_t)i);
 		onb uvw; uvw.build_from_w(n);
 		vec3 wo = unit_vector(uvw.local(random_cosine_direction()));
 
@@ -77,6 +95,7 @@ static void test_pdf_normalized(const std::string& name,
 	long   drawn = 0, rejected = 0, density_samples = 0;
 
 	for (int i = 0; i < N; ++i) {
+		DrawScope draw(draw_key(name, 2), (uint32_t)i);
 		vec3   wi = random_unit_vector();
 		double p  = mat->pdf_dir(wo, wi, rec);
 		if (p > 0.0) sum += p / (q_uniform + p);
@@ -108,6 +127,7 @@ static void test_reciprocity(const std::string& name,
 	int compared = 0;
 
 	for (int i = 0; i < N; ++i) {
+		DrawScope draw(draw_key(name, 3), (uint32_t)i);
 		vec3 a = unit_vector(uvw.local(random_cosine_direction()));
 		vec3 b = unit_vector(uvw.local(random_cosine_direction()));
 		double f1 = lum(mat->f_dir(a, b, rec));
@@ -141,6 +161,7 @@ static void test_reflectance(const std::string& name,
 
 		double sum = 0.0;
 		for (int i = 0; i < N; ++i) {
+			DrawScope draw(draw_key(at, 4), (uint32_t)i);
 			BSDFSample bs = mat->sample_dir(wo, rec);
 			if (bs.pdf <= 0.0) continue;
 			double c = std::abs(dot(n, bs.wi));
@@ -172,6 +193,9 @@ static void test_ggx_energy_compensation() {
 			double sum = 0.0, sum2 = 0.0;
 			const int N = 200000;
 			for (int i = 0; i < N; ++i) {
+				DrawScope draw(draw_key("ggx_energy",
+										(int)(r*100)*1000 + (int)(ct*100)),
+							   (uint32_t)i);
 				BSDFSample bs = m.sample_dir(wo, rec);
 				if (bs.pdf <= 0.0) continue;
 				double w = lum(bs.f) * std::abs(dot(n, bs.wi)) / bs.pdf;
