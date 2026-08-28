@@ -253,7 +253,7 @@ The GPU implements `cornell`, `furnace`, `ggx`, `hdr`, `bunny`, `glass`, `causti
 ./build/tests
 ```
 
-688 checks covering:
+704 checks covering:
 
 - **Sampling routines** — each draws a fixed, order-stable number of dimensions, and the distributions are checked by equal-measure binning: equal-area rings and sectors on the disk, equal-solid-angle bands on the sphere, equal-volume shells in the ball
 - **Analytic BSDF identities** — white furnace (`E[f·cos/pdf]` matches the known albedo and never exceeds 1), Helmholtz reciprocity, PDF normalization, and the `f·cos/pdf = G2/G1` cancellation for VNDF sampling
@@ -298,7 +298,7 @@ Extended beyond the book:
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
 | Rejection sampling → analytic inversion | A varying dimension count is what costs that sequence its stratification |
 | cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE on the path tracer, 30–40% on BDPT, for ~10% more time |
-| Ad-hoc eyeballing → 688-check suite | Catches PDF and throughput bugs before they show visually |
+| Ad-hoc eyeballing → 704-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
 
