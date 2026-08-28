@@ -57,7 +57,7 @@ Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaul
 - Spheres, boxes, axis-aligned rects, moving spheres, transforms, constant-density media
 
 ### Sampling and Precision
-- Owen-scrambled (0,2)-sequence low-discrepancy sampler on both backends. The sequence itself is shared integer arithmetic, so the CPU and the GPU path tracer walk the same one; only the state around it differs, since `thread_local` means nothing on the device. GPU ReSTIR still draws from cuRAND — the sampler carries both and falls back when a kernel has not been keyed onto the sequence. Against the white noise it replaced: 19–42% less relMSE on the GPU path tracer for 9–15% more render time, and 30–40% on GPU BDPT for 10%
+- Owen-scrambled (0,2)-sequence low-discrepancy sampler on both backends. The sequence itself is shared integer arithmetic, so the CPU and the GPU path tracer walk the same one; only the state around it differs, since `thread_local` means nothing on the device. GPU ReSTIR still draws from cuRAND — the sampler carries both and falls back when a kernel has not been keyed onto the sequence. Against the white noise it replaced: 19–42% less relMSE on the GPU path tracer for 6–19% more render time, and 30–40% on GPU BDPT for 9%
 - Every sampling routine draws a fixed number of dimensions in a fixed order. The rejection loops these replaced drew a variable number, sliding every later dimension along by an amount that changed from path to path, and a low-discrepancy sequence read at shifting dimensions is worth no more than white noise. Measured at 13–19% lower relMSE on `cornell`, `ggx` and `glass` (paired bootstrap over pixels, 95% CI)
 - Reproducible renders — the BVH split axis, every camera ray, and every photon are keyed by index rather than by a `random_device` seed and the OpenMP schedule, so the same inputs give the same image on every run
 - Single precision throughout by default — FP64 runs at 1/64 rate on consumer NVIDIA parts, and single precision is ~4× faster on the GPU here at no measurable cost in accuracy. Build with `-DRT_DOUBLE=ON` for a double-precision reference.
@@ -76,25 +76,25 @@ Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaul
 
 256×256, 64 spp, depth 10, `--no-preview`, each scene's default integrator (path tracing everywhere except `caustics`, which defaults to BDPT). Release build. GPU best of 3, CPU best of 2.
 
-The first three columns are wall clock end to end — process start, scene build, render, image write. The render columns subtract each backend's own `--spp 1` time, isolating the sampling loop from fixed cost.
+The first three columns are wall clock end to end — process start, scene build, render, image write. The render columns subtract each backend's own `--spp 1` time, isolating the sampling loop from fixed cost. Regenerate the whole table with `python3 tools/benchmark.py`.
 
 | Scene | CPU | GPU | Speedup | CPU render | GPU render | Render speedup |
 |:---|---:|---:|---:|---:|---:|---:|
-| caustics | 9.74s | 1.22s | 8.0× | 9.56s | 1.02s | 9× |
-| volume | 5.32s | 0.40s | 13.3× | 5.21s | 0.21s | 24× |
-| helmet | 1.97s | — | CPU only | 1.38s | — | — |
-| bunny | 1.92s | 2.23s | 0.9× | 0.74s | 0.21s | 3× |
-| cornell | 1.50s | 0.30s | 5.0× | 1.45s | 0.11s | 13× |
-| sss | 1.36s | 0.29s | 4.7× | 1.31s | 0.11s | 12× |
-| closed_furnace | 1.13s | — | CPU only | 1.09s | — | — |
-| glass | 0.54s | 0.27s | 2.0× | 0.51s | 0.09s | 6× |
-| hdr | 0.40s | 0.29s | 1.4× | 0.36s | 0.07s | 5× |
-| ggx | 0.39s | 0.25s | 1.5× | 0.36s | 0.05s | 7× |
-| furnace | 0.11s | 0.19s | 0.6× | 0.08s | <0.01s | — |
+| caustics | 10.09s | 1.56s | 6.5× | 9.90s | 1.34s | 7.4× |
+| volume | 5.36s | 0.45s | 11.9× | 5.25s | 0.26s | 19.9× |
+| helmet | 2.17s | — | CPU only | 1.59s | — | — |
+| bunny | 2.21s | 2.35s | 0.9× | 0.97s | 0.34s | 2.9× |
+| cornell | 1.53s | 0.31s | 4.9× | 1.48s | 0.13s | 11.4× |
+| sss | 1.43s | 0.30s | 4.8× | 1.36s | 0.12s | 11.7× |
+| closed_furnace | 0.74s | — | CPU only | 0.69s | — | — |
+| glass | 0.59s | 0.27s | 2.2× | 0.55s | 0.10s | 5.7× |
+| hdr | 0.43s | 0.28s | 1.5× | 0.39s | 0.07s | 5.6× |
+| ggx | 0.42s | 0.27s | 1.5× | 0.38s | 0.07s | 5.9× |
+| furnace | 0.15s | 0.21s | 0.7× | 0.12s | <0.01s | — |
 
 Fixed cost dominates the wall-clock columns at this sample count. On the simple scenes it is ~0.18s for the GPU against ~0.03–0.05s for the CPU — the difference is largely CUDA context creation — so the GPU spends longer starting up than it does rendering. `furnace` is a single sphere and one bounce, so its GPU render falls below what this timing method can resolve.
 
-`bunny` is the extreme case: 1.18s of its CPU time and 2.02s of its GPU time is glTF parsing and BVH construction, single-threaded work that happens before a ray is cast — which is why it loses end to end while winning 3× on the render itself.
+`bunny` is the extreme case: 1.24s of its CPU time and 2.01s of its GPU time is glTF parsing and BVH construction, single-threaded work that happens before a ray is cast — which is why it loses end to end while winning 2.9× on the render itself.
 
 The preview window costs ~0.3s of one-time GL context creation. Frame staging is capped at 30 Hz, so its cost tracks wall-clock duration rather than sample count.
 
@@ -102,7 +102,7 @@ The preview window costs ~0.3s of one-time GL context creation. Frame staging is
 - CPU: AMD Ryzen 7 5800H (8 cores / 16 threads)
 - GPU: NVIDIA RTX 3060 6GB Laptop — CUDA 13.1, sm\_86
 
-Every row above comes from a single pass. On a heat-soaked laptop the same commands run 15–35% slower — on both backends, since the GPU figures include CPU-side scene build — so compare within a pass, not against these absolutes.
+Every row above comes from a single pass, best of 2 on the CPU and best of 3 on the GPU. Compare within a pass, not against these absolutes: across three passes taken minutes apart, every row agreed to within 2% except `caustics`, which is both the longest CPU run and the first in the list and so came out 24% faster on the one pass that started from a cold machine. A heat-soaked laptop runs 15–35% slower on both backends, since the GPU figures include CPU-side scene build.
 
 ---
 
@@ -292,12 +292,12 @@ Extended beyond the book:
 | Single-bounce direct → NEE + MIS power heuristic | Lower variance, correct weighting |
 | Schlick-only dielectrics → GGX microfacet with Kulla–Conty compensation | The book's materials lose energy and cannot represent rough metal |
 | `shared_ptr` scene → flat tagged-union arrays | Required for CUDA device code |
-| CPU-only → dual CPU/CUDA backend | Up to 24× on the render itself, with identical shading on both |
+| CPU-only → dual CPU/CUDA backend | Up to 20× on the render itself, with identical shading on both |
 | One integrator → PT, BDPT, PPM, ReSTIR | Caustics and SDS paths need estimators the book's approach cannot reach |
 | Double → single precision, with a double build kept as reference | 4× on the GPU; the double build is how the float build is checked |
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
 | Rejection sampling → analytic inversion | A varying dimension count is what costs that sequence its stratification |
-| cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE on the path tracer, 30–40% on BDPT, for ~10% more time |
+| cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE on the path tracer, 30–40% on BDPT, for 6–19% more time |
 | Ad-hoc eyeballing → 704-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
@@ -315,7 +315,7 @@ Extended beyond the book:
 - [x] Port the low-discrepancy sampler to the GPU path tracer and BDPT
 - [x] Hoist the GPU scene upload out of `cuda_render` so a viewport render can restart without paying for it
 - [ ] Decide whether GPU ReSTIR should be keyed onto the sequence — its resampling reads neighbouring reservoirs, so it is not a given that a per-pixel sequence helps there
-- [ ] Cut the mesh scene build, which is most of the wall clock on `bunny` (1.18s of 1.92s on the CPU, 2.02s of 2.23s on the GPU)
+- [ ] Cut the mesh scene build, which is most of the wall clock on `bunny` (1.24s of 2.21s on the CPU, 2.01s of 2.35s on the GPU)
 - [ ] OptiX backend (hardware RT cores)
 - [ ] Light trees for many-light scenes
 - [ ] Spectral rendering (hero wavelength)

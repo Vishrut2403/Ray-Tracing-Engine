@@ -71,6 +71,13 @@ static void render_with_preview(Framebuffer& fb, int width, int height,
 
 int main(int argc, char** argv)
 {
+	// An unoptimized build runs several times slower, which is invisible in the
+	// image and has twice been mistaken for a real measurement.
+#ifndef NDEBUG
+	std::cerr << "[warning] unoptimized build; timings from it mean nothing. "
+				 "Configure with -DCMAKE_BUILD_TYPE=Release.\n";
+#endif
+
 	RenderConfig config  = parse_cli(argc, argv);
 	bool use_gpu         = get_flag_value(argc, argv, "--device", "gpu");
 	bool no_preview      = has_flag(argc, argv, "--no-preview");
