@@ -59,7 +59,7 @@ Pick one with `--integrator`; scenes carry a sensible default (`caustics` defaul
 ### Sampling and Precision
 - Owen-scrambled (0,2)-sequence low-discrepancy sampler on both backends. The sequence itself is shared integer arithmetic, so the CPU and the GPU path tracer walk the same one; only the state around it differs, since `thread_local` means nothing on the device. GPU ReSTIR still draws from cuRAND — the sampler carries both and falls back when a kernel has not been keyed onto the sequence. Against the white noise it replaced: 19–42% less relMSE on the GPU path tracer for 6–19% more render time, and 30–40% on GPU BDPT for 9%
 - Every sampling routine draws a fixed number of dimensions in a fixed order. The rejection loops these replaced drew a variable number, sliding every later dimension along by an amount that changed from path to path, and a low-discrepancy sequence read at shifting dimensions is worth no more than white noise. Measured at 13–19% lower relMSE on `cornell`, `ggx` and `glass` (paired bootstrap over pixels, 95% CI)
-- Reproducible renders on the path tracer and progressive photon mapping — the BVH split axis, every camera ray, and every photon are keyed by index rather than by a `random_device` seed and the OpenMP schedule, so the same inputs give the same image on every run. **BDPT is the exception**: its `t == 1` strategy splats into arbitrary pixels through an atomic float add, and float addition is not associative, so the thread schedule decides the low bits. Eight runs of `caustics` give two distinct images
+- Reproducible renders — the BVH split axis, every camera ray, and every photon are keyed by index rather than by a `random_device` seed and the OpenMP schedule, so the same inputs give the same image on every run, at any thread count and any tile size. BDPT needed work for this: its `t == 1` strategy splats into arbitrary pixels, and summing those under an atomic left the low bits to the thread schedule, since float addition is not associative. Contributions are now bucketed by the pixel that generated the light path and folded in between passes, in pixel order — neither the thread nor the tile can reach the result. It costs about 3.5% on `caustics`
 - Single precision throughout by default — FP64 runs at 1/64 rate on consumer NVIDIA parts, and single precision is ~4× faster on the GPU here at no measurable cost in accuracy. Build with `-DRT_DOUBLE=ON` for a double-precision reference.
 
 ### Acceleration and Infrastructure
@@ -253,13 +253,14 @@ The GPU implements `cornell`, `furnace`, `ggx`, `hdr`, `bunny`, `glass`, `causti
 ./build/tests
 ```
 
-704 checks covering:
+707 checks covering:
 
 - **Sampling routines** — each draws a fixed, order-stable number of dimensions, and the distributions are checked by equal-measure binning: equal-area rings and sectors on the disk, equal-solid-angle bands on the sphere, equal-volume shells in the ball
 - **Analytic BSDF identities** — white furnace (`E[f·cos/pdf]` matches the known albedo and never exceeds 1), Helmholtz reciprocity, PDF normalization, and the `f·cos/pdf = G2/G1` cancellation for VNDF sampling
 - **Energy conservation** — the closed furnace, where `L = Le/(1-rho)` must converge to exactly 1 across the whole image, catches throughput and PDF bugs that the open furnace misses
 - **Cross-backend agreement** — CPU and GPU means must agree on `cornell`, `glass`, and `ggx`
 - **Cross-integrator agreement** — PT against BDPT, and PPM against BDPT; three independent estimators of the same integral disagreeing means at least one is wrong
+- **Determinism** — BDPT rendered twice gives the same image bit for bit, and the same at tile sizes 16, 32 and 64; the splat accumulation order is the one place a thread schedule could reach the pixels
 - **Photon mapping invariants** — the result must not depend on the iteration count
 - **Denoiser** — output finite, non-negative, and energy-preserving
 
@@ -298,7 +299,7 @@ Extended beyond the book:
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
 | Rejection sampling → analytic inversion | A varying dimension count is what costs that sequence its stratification |
 | cuRAND on the GPU → the same sequence as the CPU | 19–42% less relMSE on the path tracer, 30–40% on BDPT, for 6–19% more time |
-| Ad-hoc eyeballing → 704-check suite | Catches PDF and throughput bugs before they show visually |
+| Ad-hoc eyeballing → 707-check suite | Catches PDF and throughput bugs before they show visually |
 
 ---
 
@@ -316,7 +317,7 @@ Extended beyond the book:
 - [x] Hoist the GPU scene upload out of `cuda_render` so a viewport render can restart without paying for it
 - [ ] Decide whether GPU ReSTIR should be keyed onto the sequence — its resampling reads neighbouring reservoirs, so it is not a given that a per-pixel sequence helps there
 - [x] Cut the mesh scene build — 3.6× on the CPU, 1.8× on the GPU
-- [ ] Make BDPT reproducible: give each thread its own splat buffer and merge in thread order, so the sum does not depend on the schedule
+- [x] Make BDPT reproducible — the splat sum no longer depends on the thread schedule or the tiling
 - [ ] OptiX backend (hardware RT cores)
 - [ ] Light trees for many-light scenes
 - [ ] Spectral rendering (hero wavelength)

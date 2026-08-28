@@ -28,11 +28,12 @@ void Renderer::render(
 	const int W = fb.get_width();
 	const int H = fb.get_height();
 
-	// t == 1 deposits into arbitrary pixels, so it cannot use the tile buffers.
-	BDPTSplatBuffer splat;
-	if (use_bdpt) splat.resize(W, H);
-
 	auto tiles = generate_tiles(W, H, tile_size);
+
+	// t == 1 deposits into arbitrary pixels, so it cannot use the tile buffers.
+	// One bucket per pixel, which is what makes the merge order fixed.
+	BDPTSplatBuffer splat;
+	if (use_bdpt) splat.resize(W, H, W * H);
 
 	float cx = W*0.5f, cy = H*0.5f;
 	std::sort(tiles.begin(), tiles.end(),
@@ -67,7 +68,8 @@ void Renderer::render(
 
 					color sample;
 					if (use_bdpt)
-						sample = bdpt_Li(r, cam, world, lights, max_depth, splat);
+						sample = bdpt_Li(r, cam, world, lights, max_depth,
+										 splat, j*W + i);
 					else
 						sample = Li(r, background, world, lights, max_depth, env);
 
@@ -78,6 +80,9 @@ void Renderer::render(
 		}
 
 		if (cancel && cancel->load()) break;
+
+		// Fold this pass's light-tracing splats in, in tile order.
+		if (use_bdpt) splat.flush();
 
 		// The running mean, so a render stopped early still shows an unbiased
 		// estimate rather than a part-finished one.
@@ -94,12 +99,8 @@ void Renderer::render(
 			if (use_bdpt) {
 				real inv = 1.0 / real(s + 1);
 				for (int j = 0; j < H; ++j)
-					for (int i = 0; i < W; ++i) {
-						size_t k = ((size_t)j*W + i)*3;
-						fb.set(i, j, fb.get(i, j)
-									 + color(splat.data[k+0], splat.data[k+1],
-											 splat.data[k+2]) * inv);
-					}
+					for (int i = 0; i < W; ++i)
+						fb.set(i, j, fb.get(i, j) + splat.total(i, j) * inv);
 			}
 		}
 

@@ -387,6 +387,44 @@ void test_tiling_invariance() {
 	}
 }
 
+// BDPT's t == 1 strategy splats into arbitrary pixels, so its accumulation
+// order is the one place the thread schedule could reach the image. It used to:
+// eight runs of `caustics` gave two distinct images. The order is now fixed by
+// the pixel that generated the light path, which is neither the thread's nor
+// the tile's business.
+void test_bdpt_determinism() {
+	const int W = 64, H = 48;
+	RenderConfig cfg;
+	cfg.feature = "caustics";
+	cfg.width = W; cfg.height = H;
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+	check(scene.use_bdpt, "bdpt: caustics still selects BDPT", 1.0, 1.0, 0.5);
+
+	auto render = [&](int tile) {
+		Framebuffer fb(W, H);
+		Renderer r(8, 6, tile);
+		r.verbose = false;
+		r.render(scene, fb, cam, cfg.background);
+		return std::vector<float>(fb.raw_data(), fb.raw_data() + (size_t)W*H*3);
+	};
+
+	std::vector<float> a = render(32), b = render(32);
+	int differing = 0;
+	for (size_t i = 0; i < a.size(); ++i) if (a[i] != b[i]) ++differing;
+	check(differing == 0, "bdpt: two runs give the same image bit for bit",
+		  (double)differing, 0.0, 0.5);
+
+	// The tiling decides which thread sees which pixel, so it must not reach
+	// the splat sum either.
+	std::vector<float> c = render(16), d = render(64);
+	differing = 0;
+	for (size_t i = 0; i < a.size(); ++i)
+		if (c[i] != a[i] || d[i] != a[i]) ++differing;
+	check(differing == 0, "bdpt: tile size does not change the splat sum",
+		  (double)differing, 0.0, 0.5);
+}
+
 } // namespace
 
 void run_render_tests() {
@@ -402,6 +440,7 @@ void run_render_tests() {
 	// that exercises the GPU BDPT kernels.
 	compare_scene("caustics", 256, 12, 0.05);
 
+	test_bdpt_determinism();
 	test_cancel();
 	test_tiling_invariance();
 	test_closed_furnace();

@@ -526,7 +526,8 @@ color bdpt_Li(
 	const std::shared_ptr<hittable>& world,
 	const std::shared_ptr<hittable_list>& lights,
 	int max_depth,
-	BDPTSplatBuffer& splat
+	BDPTSplatBuffer& splat,
+	int splat_bucket
 ) {
 	if (max_depth > MAX_BDPT_DEPTH) max_depth = MAX_BDPT_DEPTH;
 
@@ -557,7 +558,7 @@ color bdpt_Li(
 
 			if (t == 1) {
 				// Clamp after the 1/(W*H): the contribution is carried undivided.
-				splat.add((int)(rx + 0.5), (int)(ry + 0.5),
+				splat.add(splat_bucket, (int)(rx + 0.5), (int)(ry + 0.5),
 						  safe(c * inv_light_paths));
 			} else {
 				L += safe(c);
