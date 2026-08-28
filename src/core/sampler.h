@@ -122,8 +122,12 @@ inline real sampler_next() {
 	uint32_t sx  = sampler_mix(s.pixel, pair * 2u + 1u);
 	uint32_t sy  = sampler_mix(s.pixel, pair * 2u + 2u);
 
-	real u = sampler_unit(sampler_owen(sampler_reverse_bits(idx), sx));
-	real v = sampler_unit(sampler_owen(sampler_sobol2(idx, 0u),   sy));
+	// sampler_owen reverses its argument first, and reversal is its own
+	// inverse, so owen(reverse(idx)) folds to reverse(permute(idx)) -- two of
+	// the five reversal rounds cancel. Same values, less work, in a function
+	// that is a fifth of a CPU render.
+	real u = sampler_unit(sampler_reverse_bits(sampler_lk_permute(idx, sx)));
+	real v = sampler_unit(sampler_owen(sampler_sobol2(idx, 0u), sy));
 
 	s.pending     = v;
 	s.has_pending = true;
