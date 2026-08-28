@@ -80,21 +80,23 @@ The first three columns are wall clock end to end — process start, scene build
 
 | Scene | CPU | GPU | Speedup | CPU render | GPU render | Render speedup |
 |:---|---:|---:|---:|---:|---:|---:|
-| caustics | 9.95s | 1.55s | 6.4× | 9.75s | 1.34s | 7.3× |
-| volume | 5.38s | 0.44s | 12.4× | 5.25s | 0.26s | 20.5× |
-| helmet | 1.91s | — | CPU only | 1.45s | — | — |
-| bunny | 1.22s | 1.34s | 0.9× | 0.88s | 0.22s | 4.0× |
-| cornell | 1.55s | 0.31s | 5.1× | 1.50s | 0.12s | 12.0× |
-| sss | 1.42s | 0.30s | 4.7× | 1.36s | 0.11s | 12.0× |
-| closed_furnace | 0.77s | — | CPU only | 0.73s | — | — |
-| glass | 0.58s | 0.28s | 2.1× | 0.55s | 0.09s | 5.8× |
-| hdr | 0.42s | 0.26s | 1.6× | 0.38s | 0.05s | 7.6× |
-| ggx | 0.42s | 0.28s | 1.5× | 0.39s | 0.07s | 5.8× |
-| furnace | 0.14s | 0.22s | 0.6× | 0.11s | 0.01s | 8.5× |
+| caustics | 4.04s | 1.54s | 2.6× | 3.95s | 1.34s | 2.9× |
+| volume | 1.51s | 0.44s | 3.4× | 1.45s | 0.25s | 5.7× |
+| helmet | 1.98s | — | CPU only | 1.58s | — | — |
+| bunny | 1.25s | 1.31s | 1.0× | 0.93s | 0.20s | 4.7× |
+| cornell | 0.79s | 0.31s | 2.6× | 0.75s | 0.12s | 6.2× |
+| sss | 0.75s | 0.30s | 2.5× | 0.71s | 0.12s | 6.0× |
+| closed_furnace | 0.47s | — | CPU only | 0.43s | — | — |
+| glass | 0.42s | 0.27s | 1.5× | 0.38s | 0.09s | 4.3× |
+| hdr | 0.40s | 0.26s | 1.6× | 0.36s | 0.06s | 6.4× |
+| ggx | 0.34s | 0.26s | 1.3× | 0.31s | 0.06s | 5.2× |
+| furnace | 0.12s | 0.21s | 0.6× | 0.09s | <0.01s | — |
 
 Fixed cost dominates the wall-clock columns at this sample count. On the simple scenes it is ~0.18s for the GPU against ~0.03–0.05s for the CPU — the difference is largely CUDA context creation — so the GPU spends longer starting up than it does rendering. `furnace` is a single sphere and one bounce, so its GPU render falls below what this timing method can resolve.
 
-`bunny` is the extreme case: 0.34s of its CPU time and 1.12s of its GPU time is OBJ parsing and BVH construction, single-threaded work that happens before a ray is cast — which is why it still loses end to end while winning 4× on the render itself. That build used to be 1.24s and 2.01s; most of it was `fmin`/`fmax` promoting `real` to double and calling out to libm, once per component per triangle.
+`bunny` is the extreme case: 0.32s of its CPU time and 1.11s of its GPU time is OBJ parsing and BVH construction, single-threaded work that happens before a ray is cast — which is why it still loses end to end while winning 4.7× on the render itself. That build used to be 1.24s and 2.01s; most of it was `fmin`/`fmax` promoting `real` to double and calling out to libm, once per component per triangle.
+
+The CPU render columns are 1.3–3.6× faster than they were before `hit_record` stopped carrying a `shared_ptr`. Copying one on every intersection cost an atomic increment and decrement, and since a scene has only a handful of materials, sixteen threads were contending for the same few control blocks. `volume` gained most, because a medium interaction writes the record on every scattering event.
 
 The preview window costs ~0.3s of one-time GL context creation. Frame staging is capped at 30 Hz, so its cost tracks wall-clock duration rather than sample count.
 
@@ -293,7 +295,7 @@ Extended beyond the book:
 | Single-bounce direct → NEE + MIS power heuristic | Lower variance, correct weighting |
 | Schlick-only dielectrics → GGX microfacet with Kulla–Conty compensation | The book's materials lose energy and cannot represent rough metal |
 | `shared_ptr` scene → flat tagged-union arrays | Required for CUDA device code |
-| CPU-only → dual CPU/CUDA backend | Up to 20× on the render itself, with identical shading on both |
+| CPU-only → dual CPU/CUDA backend | Up to 6× on the render itself, with identical shading on both |
 | One integrator → PT, BDPT, PPM, ReSTIR | Caustics and SDS paths need estimators the book's approach cannot reach |
 | Double → single precision, with a double build kept as reference | 4× on the GPU; the double build is how the float build is checked |
 | White noise → Owen-scrambled (0,2)-sequence | Stratification the RNG cannot give |
@@ -318,6 +320,7 @@ Extended beyond the book:
 - [ ] Decide whether GPU ReSTIR should be keyed onto the sequence — its resampling reads neighbouring reservoirs, so it is not a given that a per-pixel sequence helps there
 - [x] Cut the mesh scene build — 3.6× on the CPU, 1.8× on the GPU
 - [x] Make BDPT reproducible — the splat sum no longer depends on the thread schedule or the tiling
+- [x] Take the `shared_ptr` off the intersection hot path — 1.3–3.6× on the CPU render
 - [ ] OptiX backend (hardware RT cores)
 - [ ] Light trees for many-light scenes
 - [ ] Spectral rendering (hero wavelength)

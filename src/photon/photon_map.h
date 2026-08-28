@@ -27,7 +27,7 @@ struct VisiblePoint {
 	color  flux;     
 	long long n_photons;
 	double u, v;  
-	std::shared_ptr<material> mat;
+	const material* mat = nullptr;
 	bool   valid = false;
 
 	int px = 0, py = 0;

@@ -34,7 +34,7 @@ struct BDPTVertex {
 	vec3   n;
 	color  beta;
 	color  Le;
-	std::shared_ptr<material> mat;
+	const material* mat = nullptr;
 	bool   delta       = false;
 	bool   is_emissive = false;
 	bool   is_light_ep = false;

@@ -88,7 +88,7 @@ public:
 
 			rec.t         = t;
 			rec.p         = r.at(t);
-			rec.mat_ptr   = mat;
+			rec.mat_ptr   = mat.get();
 			rec.tangent   = tangent;
 			rec.bitangent = bitangent;
 			rec.set_face_normal(r, smooth_n);

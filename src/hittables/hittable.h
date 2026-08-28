@@ -15,7 +15,11 @@ struct hit_record {
 	bool   front_face;
 	real u;
 	real v;
-	std::shared_ptr<material> mat_ptr;
+	// Non-owning. The scene owns every material for the whole render, so the
+	// refcount a shared_ptr would carry buys nothing -- and it is not free:
+	// copying one here on every intersection put 26% of a cornell render in
+	// atomic increments and decrements, ahead of BVH traversal.
+	const material* mat_ptr = nullptr;
 
 	void set_face_normal(const ray& r, const vec3& outward_normal) {
 		front_face = dot(r.direction(), outward_normal) < 0;

@@ -51,7 +51,7 @@ public:
 
 		vec3 outward_normal(0, 0, 1);
 		rec.set_face_normal(r, outward_normal);
-		rec.mat_ptr = mp;
+		rec.mat_ptr = mp.get();
 
 		return true;
 	}

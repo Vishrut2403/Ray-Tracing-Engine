@@ -62,7 +62,7 @@ public:
 
 		rec.t       = t;
 		rec.p       = r.at(t);
-		rec.mat_ptr = mat;
+		rec.mat_ptr = mat.get();
 		rec.u       = u;
 		rec.v       = v;
 		rec.set_face_normal(r, smooth_normal);
