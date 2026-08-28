@@ -33,8 +33,8 @@ point3 max(-infinity, -infinity, -infinity);
 				vec3 tester(newx, y, newz);
 
 				for (int c = 0; c < 3; c++) {
-					min[c] = fmin(min[c], tester[c]);
-					max[c] = fmax(max[c], tester[c]);
+					min[c] = rt_min(min[c], tester[c]);
+					max[c] = rt_max(max[c], tester[c]);
 				}
 			}
 		}

@@ -18,6 +18,12 @@ using real = double;
 using real = float;
 #endif
 
+// fmin and fmax from <math.h> are the double overloads, so a float argument is
+// promoted and the call goes out of line into libm. Profiling a mesh scene put
+// 44% of its build time in those two calls. These compile to one instruction.
+HD inline real rt_min(real a, real b) { return a < b ? a : b; }
+HD inline real rt_max(real a, real b) { return a > b ? a : b; }
+
 class vec3 {
 public:
 	real e[3];
@@ -46,7 +52,7 @@ public:
 
 	HD real length()          const { return sqrt(length_squared()); }
 	HD real length_squared()  const { return e[0]*e[0]+e[1]*e[1]+e[2]*e[2]; }
-	HD real max_component()   const { return fmax(e[0], fmax(e[1], e[2])); }
+	HD real max_component()   const { return rt_max(e[0], rt_max(e[1], e[2])); }
 };
 
 using point3 = vec3;

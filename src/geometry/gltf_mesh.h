@@ -96,13 +96,18 @@ public:
 		}
 
 	virtual bool bounding_box(real, real, aabb& out) const override {
-		point3 lo(fmin(fmin(v0.x(),v1.x()),v2.x()) - 1e-4,
-				  fmin(fmin(v0.y(),v1.y()),v2.y()) - 1e-4,
-				  fmin(fmin(v0.z(),v1.z()),v2.z()) - 1e-4);
-		point3 hi(fmax(fmax(v0.x(),v1.x()),v2.x()) + 1e-4,
-				  fmax(fmax(v0.y(),v1.y()),v2.y()) + 1e-4,
-				  fmax(fmax(v0.z(),v1.z()),v2.z()) + 1e-4);
-		out = aabb(lo, hi);
+		point3 lo(rt_min(rt_min(v0.x(),v1.x()),v2.x()) - 1e-4,
+				  rt_min(rt_min(v0.y(),v1.y()),v2.y()) - 1e-4,
+				  rt_min(rt_min(v0.z(),v1.z()),v2.z()) - 1e-4);
+		point3 hi(rt_max(rt_max(v0.x(),v1.x()),v2.x()) + 1e-4,
+				  rt_max(rt_max(v0.y(),v1.y()),v2.y()) + 1e-4,
+				  rt_max(rt_max(v0.z(),v1.z()),v2.z()) + 1e-4);
+		// lo is strictly below hi on every axis by construction, so the
+		// ordering the two-point constructor does would be wasted work -- and
+		// it is a libm call per component.
+		out = aabb(interval(lo.x(), hi.x()),
+				   interval(lo.y(), hi.y()),
+				   interval(lo.z(), hi.z()));
 		return true;
 	}
 };
