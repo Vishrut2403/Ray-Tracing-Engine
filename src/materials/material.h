@@ -11,6 +11,7 @@
 #include "textures/texture.h"
 #include "materials/bsdf_sample.h"
 #include "materials/ggx_energy.h"
+#include "core/rgb_spectrum.h"
 
 class material {
 public:
@@ -64,12 +65,12 @@ public:
 		vec3   wi      = uvw.local(random_cosine_direction());
 		real cosine  = dot(rec.normal, wi);
 		real pdf_val = cosine > 0.0 ? cosine / pi : 0.0;
-		return { wi, albedo->value(rec.u, rec.v, rec.p) / pi, pdf_val, false };
+		return { wi, spectral_albedo(albedo->value(rec.u, rec.v, rec.p), rec.lambda) / pi, pdf_val, false };
 	}
 
 	virtual color f(const ray&, const vec3& wi, const hit_record& rec) const override {
 		if (dot(rec.normal, wi) <= 0.0) return color(0, 0, 0);
-		return albedo->value(rec.u, rec.v, rec.p) / pi;
+		return spectral_albedo(albedo->value(rec.u, rec.v, rec.p), rec.lambda) / pi;
 	}
 
 	virtual real pdf(const ray&, const vec3& wi, const hit_record& rec) const override {
@@ -81,7 +82,7 @@ public:
 						const hit_record& rec) const override {
 		if (dot(rec.normal, wi) <= 0.0 || dot(rec.normal, wo) <= 0.0)
 			return color(0,0,0);
-		return albedo->value(rec.u, rec.v, rec.p) / pi;
+		return spectral_albedo(albedo->value(rec.u, rec.v, rec.p), rec.lambda) / pi;
 	}
 	virtual real pdf_dir(const vec3& wo, const vec3& wi,
 						   const hit_record& rec) const override {
@@ -96,7 +97,7 @@ public:
 		vec3   wi = unit_vector(uvw.local(random_cosine_direction()));
 		real c  = dot(rec.normal, wi);
 		if (c <= 0.0) return { wi, color(0,0,0), 0.0, false };
-		return { wi, albedo->value(rec.u, rec.v, rec.p) / pi, c / pi, false };
+		return { wi, spectral_albedo(albedo->value(rec.u, rec.v, rec.p), rec.lambda) / pi, c / pi, false };
 	}
 };
 
@@ -345,7 +346,7 @@ public:
 	virtual color emitted(const ray&, const hit_record& rec,
 						  real u, real v, const point3& p) const override {
 		if (!rec.front_face) return color(0,0,0);
-		return emit->value(u, v, p);
+		return spectral_emission(emit->value(u, v, p), rec.lambda);
 	}
 
 	virtual BSDFSample sample(const ray&, const hit_record&) const override {

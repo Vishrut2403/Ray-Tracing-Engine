@@ -430,6 +430,44 @@ void test_spectral_furnace() {
 			  rgb[k], want[k], 0.02);
 }
 
+// End to end for the upsampling: a coloured scene has to keep its colours.
+// The failure mode worth catching is desaturation -- an upsampling that
+// collapses towards grey still passes every energy check.
+void test_spectral_colour() {
+	const int W = 96, H = 96;
+	RenderConfig cfg;
+	cfg.feature = "cornell";
+	cfg.width = W; cfg.height = H;
+
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+	Framebuffer fb(W, H);
+	Renderer r(96, 8, 32);
+	r.verbose  = false;
+	r.spectral = true;
+	r.render(scene, fb, cam, cfg.background);
+
+	// Strips of bare wall, clear of the boxes in the middle of the box.
+	auto strip = [&](int x0, int x1) {
+		color sum(0,0,0);
+		int n = 0;
+		for (int j = H/3; j < 2*H/3; ++j)
+			for (int i = x0; i < x1; ++i) { sum += fb.get(i, j); ++n; }
+		return sum / (real)n;
+	};
+
+	color left = strip(2, 8), right = strip(W-8, W-2);
+	double lsum = (double)(left.x()+left.y()+left.z());
+	double rsum = (double)(right.x()+right.y()+right.z());
+
+	check(lsum > 0 && (double)left.y()/lsum > 0.45,
+		  "spectral cornell: the green wall stays green",
+		  lsum > 0 ? (double)left.y()/lsum : 0.0, 1.0, 0.55);
+	check(rsum > 0 && (double)right.x()/rsum > 0.70,
+		  "spectral cornell: the red wall stays red",
+		  rsum > 0 ? (double)right.x()/rsum : 0.0, 1.0, 0.30);
+}
+
 // BDPT's t == 1 strategy splats into arbitrary pixels, so its accumulation
 // order is the one place the thread schedule could reach the image. It used to:
 // eight runs of `caustics` gave two distinct images. The order is now fixed by
@@ -488,6 +526,7 @@ void run_render_tests() {
 	test_tiling_invariance();
 	test_closed_furnace();
 	test_spectral_furnace();
+	test_spectral_colour();
 	test_ppm();
 
 	check_restir("cornell", 300, 10, 0.88, 1.15);
