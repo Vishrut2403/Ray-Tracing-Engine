@@ -387,6 +387,49 @@ void test_tiling_invariance() {
 	}
 }
 
+// A spectrally flat scene has to come out of the spectral path where the RGB
+// path put it. closed_furnace is grey walls and grey emission, so every
+// wavelength carries the same radiance and the CIE integration has nothing to
+// do but reproduce it -- which pins the wavelength sampling, the pdf and the
+// normalization in one go, with no colour science left to hide behind.
+void test_spectral_furnace() {
+	const int W = 48, H = 48, spp = 400, depth = 30;
+
+	RenderConfig cfg;
+	cfg.feature = "closed_furnace";
+	cfg.width = W; cfg.height = H;
+	cfg.samples = spp; cfg.max_depth = depth;
+
+	Scene  scene = SceneFactory::build(cfg.feature);
+	camera cam   = CameraFactory::build(cfg);
+	Framebuffer fb(W, H);
+	Renderer r(spp, depth, 32);
+	r.verbose  = false;
+	r.spectral = true;
+	r.render(scene, fb, cam, cfg.background);
+
+	// Luminance, not RGB: Rec.709's weights are the Y row of the XYZ-to-sRGB
+	// matrix, so this reads back the spectral integral itself.
+	Stats st = measure(fb, W, H);
+	check(std::abs(st.mean - 1.0) < 0.01,
+		  "spectral furnace: L = Le/(1-rho) = 1", st.mean, 1.0, 0.01);
+
+	// Flat spectrum means illuminant E, and the sRGB matrix is referenced to
+	// D65, so the triple is warm by exactly this much. Neutral here would mean
+	// the CIE weights had been normalized away.
+	double rgb[3] = {0,0,0};
+	for (int j = 0; j < H; ++j)
+		for (int i = 0; i < W; ++i) {
+			color c = fb.get(i, j);
+			for (int k = 0; k < 3; ++k) rgb[k] += (double)c[k] / (W*H);
+		}
+	const double want[3] = { 1.2048, 0.9484, 0.9087 };
+	for (int k = 0; k < 3; ++k)
+		check(std::abs(rgb[k] - want[k]) < 0.02,
+			  "spectral furnace: equal-energy white lands where D65 puts it",
+			  rgb[k], want[k], 0.02);
+}
+
 // BDPT's t == 1 strategy splats into arbitrary pixels, so its accumulation
 // order is the one place the thread schedule could reach the image. It used to:
 // eight runs of `caustics` gave two distinct images. The order is now fixed by
@@ -444,6 +487,7 @@ void run_render_tests() {
 	test_cancel();
 	test_tiling_invariance();
 	test_closed_furnace();
+	test_spectral_furnace();
 	test_ppm();
 
 	check_restir("cornell", 300, 10, 0.88, 1.15);

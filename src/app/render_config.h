@@ -14,6 +14,10 @@ struct RenderConfig {
 	int tile_size = 32;
 
 	color background = color(0, 0, 0);
+
+	// Carry three wavelengths per path and convert through CIE at the film,
+	// instead of treating every colour as RGB.
+	bool  spectral = false;
 };
 
 inline void apply_furnace_preset(RenderConfig& cfg) {

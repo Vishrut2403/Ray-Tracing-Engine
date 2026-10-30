@@ -180,6 +180,7 @@ int main(int argc, char** argv)
 								 [&]() { go(true); });
 	} else {
 		Renderer renderer(config.samples, config.max_depth, config.tile_size);
+		renderer.spectral = config.spectral;
 		auto go = [&]() { renderer.render(scene, fb, cam, config.background); };
 		if (no_preview) go();
 		else render_with_preview(fb, config.width, config.height, go);

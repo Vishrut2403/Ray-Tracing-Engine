@@ -22,6 +22,10 @@ public:
 	// Off when a viewport drives the render and restarts it on every nudge.
 	bool verbose = true;
 
+	// Three wavelengths per path, converted to XYZ at the film. Off means
+	// every colour keeps meaning RGB.
+	bool spectral = false;
+
 private:
 	int samples_per_pixel;
 	int max_depth;

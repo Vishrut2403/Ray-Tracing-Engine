@@ -20,6 +20,11 @@ struct hit_record {
 	// copying one here on every intersection put 26% of a cornell render in
 	// atomic increments and decrements, ahead of BVH traversal.
 	const material* mat_ptr = nullptr;
+	// The three wavelengths this path carries, in nm. Zero means the render is
+	// in RGB mode and nothing should read them. Every BSDF entry point takes a
+	// record, so this reaches them all without touching 42 signatures -- and
+	// `ray` stays the size it is, which the device cares about.
+	vec3 lambda = vec3(0, 0, 0);
 
 	void set_face_normal(const ray& r, const vec3& outward_normal) {
 		front_face = dot(r.direction(), outward_normal) < 0;

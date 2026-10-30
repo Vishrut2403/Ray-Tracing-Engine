@@ -39,6 +39,7 @@ static void print_usage(const char* prog) {
 	"      --no-preview         headless; no OpenGL window\n"
 	"      --viewport           open the scene in the viewport instead\n"
 	"      --rendered           open the viewport straight into rendered mode\n"
+	"      --spectral           carry wavelengths and convert through CIE\n"
 	"      --help               this message\n"
 	"\n"
 	"The GPU implements cornell, furnace, ggx, hdr, bunny, glass, caustics,\n"
@@ -77,6 +78,7 @@ RenderConfig parse_cli(int argc, char** argv)
 		else if ((a == "--spp"    || a == "-s") && i+1 < argc) config.samples   = std::atoi(argv[++i]);
 		else if ((a == "--depth"  || a == "-d") && i+1 < argc) config.max_depth = std::atoi(argv[++i]);
 		else if ((a == "--tile"   || a == "-t") && i+1 < argc) config.tile_size = std::atoi(argv[++i]);
+		else if (a == "--spectral")                           config.spectral  = true;
 	}
 
 	// main() picks the writer off this extension, so .exr has to survive here.

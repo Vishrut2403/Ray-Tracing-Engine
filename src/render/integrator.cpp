@@ -574,7 +574,8 @@ color Li(
 	const std::shared_ptr<hittable>& world,
 	const std::shared_ptr<hittable_list>& lights,
 	int max_depth,
-	const std::shared_ptr<env_light>& env
+	const std::shared_ptr<env_light>& env,
+	const vec3& lambda
 ) {
 	ray   r    = initial_ray;
 	color L    (0,0,0);
@@ -585,6 +586,7 @@ color Li(
 
 	for (int depth = 0; depth < max_depth; ++depth) {
 		hit_record rec;
+		rec.lambda = lambda;
 		if (!world->hit(r, interval(0.001, infinity), rec)) {
 			color Le = env ? env->Le(r.direction()) : background;
 			if (specular_bounce || depth == 0
@@ -618,6 +620,7 @@ color Li(
 			real light_pdf = lights->pdf_value(rec.p, wi);
 			if (light_pdf > 0.0) {
 				hit_record lr;
+				lr.lambda = lambda;
 				bool blocked = world->hit(ray(rec.p, wi, r.time()),
 										  interval(0.001, infinity), lr);
 				color Le2(0,0,0);

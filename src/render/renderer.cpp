@@ -9,6 +9,7 @@
 #include "render/integrator.h"
 #include "render/tile.h"
 #include "lights/env_light.h"
+#include "core/spectrum.h"
 
 Renderer::Renderer(int spp, int depth, int tile_size)
 	: samples_per_pixel(spp), max_depth(depth), tile_size(tile_size) {}
@@ -66,12 +67,36 @@ void Renderer::render(
 					real v = (j + random_double()) / (H - 1);
 					ray r = cam.get_ray(u, v);
 
+					// Hero wavelength: one sample drawn, the other two rotated
+					// a third of the range away, so the three are stratified
+					// by construction rather than three independent draws.
+					vec3 lambda(0, 0, 0);
+					if (spectral) {
+						const real span = kLambdaMax - kLambdaMin;
+						real h = kLambdaMin + random_double() * span;
+						for (int k = 0; k < 3; ++k)
+							lambda[k] = kLambdaMin
+									  + std::fmod(h - kLambdaMin + k*span/3, span);
+					}
+
 					color sample;
 					if (use_bdpt)
 						sample = bdpt_Li(r, cam, world, lights, max_depth,
 										 splat, j*W + i);
 					else
-						sample = Li(r, background, world, lights, max_depth, env);
+						sample = Li(r, background, world, lights, max_depth, env,
+									lambda);
+
+					if (spectral) {
+						// Each colour component is radiance at its own
+						// wavelength; span/3 is the uniform pdf and the
+						// three-way average rolled together.
+						const real span = kLambdaMax - kLambdaMin;
+						vec3 xyz(0, 0, 0);
+						for (int k = 0; k < 3; ++k)
+							xyz += spectral_to_xyz(lambda[k], sample[k]);
+						sample = xyz_to_rgb(xyz * (span / 3));
+					}
 
 					accum[(size_t)j*W + i] += sample;
 					sampler_end_sample();

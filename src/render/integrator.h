@@ -79,5 +79,7 @@ color Li(
 	const std::shared_ptr<hittable>& world,
 	const std::shared_ptr<hittable_list>& lights,
 	int max_depth,
-	const std::shared_ptr<env_light>& env = nullptr
+	const std::shared_ptr<env_light>& env = nullptr,
+	// Zero leaves every colour meaning RGB, which is the default path.
+	const vec3& lambda = vec3(0, 0, 0)
 );
