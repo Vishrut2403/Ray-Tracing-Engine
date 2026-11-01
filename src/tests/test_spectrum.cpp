@@ -154,6 +154,47 @@ void test_dispersion() {
 		  (double)flat.ior(400), 1.5, 0.0);
 }
 
+// The adaptation has one defining property: it must send the source white
+// exactly onto the destination white. Everything else follows from that.
+void test_chromatic_adaptation() {
+	vec3 e(kWhiteE[0], kWhiteE[1], kWhiteE[2]);
+	vec3 d65(kWhiteD65[0], kWhiteD65[1], kWhiteD65[2]);
+
+	vec3 got = chromatic_adapt(e, kWhiteE, kWhiteD65);
+	check((double)(got - d65).length() < 1e-4,
+		  "adaptation: equal-energy white lands on D65",
+		  (double)(got - d65).length(), 0.0, 1e-4);
+
+	// Adapting to the white you already have must change nothing.
+	vec3 probe(0.31, 0.47, 0.22);
+	vec3 same = chromatic_adapt(probe, kWhiteD65, kWhiteD65);
+	check((double)(same - probe).length() < 1e-4,
+		  "adaptation: same white in and out is the identity",
+		  (double)(same - probe).length(), 0.0, 1e-4);
+
+	// And it must be invertible: there and back is where a transposed matrix
+	// or a swapped white point shows up.
+	vec3 back = chromatic_adapt(chromatic_adapt(probe, kWhiteE, kWhiteD65),
+								kWhiteD65, kWhiteE);
+	check((double)(back - probe).length() < 1e-4,
+		  "adaptation: the round trip returns the colour",
+		  (double)(back - probe).length(), 0.0, 1e-4);
+
+	// A flat spectrum is the case the renderer actually hits, and after
+	// adaptation it has to be neutral rather than warm.
+	vec3 xyz(0,0,0);
+	for (real l = kLambdaMin; l <= kLambdaMax; l += 1)
+		xyz += spectral_to_xyz(l, (real)0.5);
+	color rgb = xyz_to_rgb(chromatic_adapt(xyz, kWhiteE, kWhiteD65));
+	real lo = rt_min(rgb.x(), rt_min(rgb.y(), rgb.z()));
+	real hi = rt_max(rgb.x(), rt_max(rgb.y(), rgb.z()));
+	check((double)(hi - lo) < 0.01,
+		  "adaptation: an adapted flat spectrum is neutral",
+		  (double)(hi - lo), 0.0, 0.01);
+	check(std::abs((double)rgb.y() - 0.5) < 0.01,
+		  "adaptation: and keeps its reflectance", (double)rgb.y(), 0.5, 0.01);
+}
+
 }  // namespace
 
 void run_spectrum_tests() {
@@ -162,5 +203,6 @@ void run_spectrum_tests() {
 	test_equal_energy_is_neutral();
 	test_monochromatic_locus();
 	test_flat_spectrum_round_trip();
+	test_chromatic_adaptation();
 	test_dispersion();
 }

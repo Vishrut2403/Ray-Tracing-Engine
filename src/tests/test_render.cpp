@@ -414,19 +414,19 @@ void test_spectral_furnace() {
 	check(std::abs(st.mean - 1.0) < 0.01,
 		  "spectral furnace: L = Le/(1-rho) = 1", st.mean, 1.0, 0.01);
 
-	// Flat spectrum means illuminant E, and the sRGB matrix is referenced to
-	// D65, so the triple is warm by exactly this much. Neutral here would mean
-	// the CIE weights had been normalized away.
+	// The film adapts equal-energy to D65, so a flat spectrum comes back
+	// neutral. Un-adapted it would be warm by about 30% across the channels,
+	// which is the failure this pins.
 	double rgb[3] = {0,0,0};
 	for (int j = 0; j < H; ++j)
 		for (int i = 0; i < W; ++i) {
 			color c = fb.get(i, j);
 			for (int k = 0; k < 3; ++k) rgb[k] += (double)c[k] / (W*H);
 		}
-	const double want[3] = { 1.2048, 0.9484, 0.9087 };
+	const double want[3] = { 1.0, 1.0, 1.0 };
 	for (int k = 0; k < 3; ++k)
 		check(std::abs(rgb[k] - want[k]) < 0.02,
-			  "spectral furnace: equal-energy white lands where D65 puts it",
+			  "spectral furnace: an adapted flat spectrum is neutral",
 			  rgb[k], want[k], 0.02);
 }
 

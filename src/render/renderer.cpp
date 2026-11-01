@@ -95,7 +95,12 @@ void Renderer::render(
 						vec3 xyz(0, 0, 0);
 						for (int k = 0; k < 3; ++k)
 							xyz += spectral_to_xyz(lambda[k], sample[k]);
-						sample = xyz_to_rgb(xyz * (span / 3));
+						// Every scene here is lit by a flat spectrum, so the
+						// illuminant is equal-energy; adapt it to the D65 the
+						// sRGB primaries are referenced to. A scene with a
+						// measured illuminant would name its own white point.
+						sample = xyz_to_rgb(chromatic_adapt(xyz * (span / 3),
+															kWhiteE, kWhiteD65));
 					}
 
 					accum[(size_t)j*W + i] += sample;
