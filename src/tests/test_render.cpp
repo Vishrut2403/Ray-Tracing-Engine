@@ -468,6 +468,46 @@ void test_spectral_colour() {
 		  rsum > 0 ? (double)right.x()/rsum : 0.0, 1.0, 0.30);
 }
 
+// A dispersive refraction cannot carry three wavelengths onward, so the
+// material drops two and triples the survivor. That is only unbiased if the
+// film's 1/3 cancels the 3 exactly -- so a glass whose dispersion is
+// negligible, but which still runs the whole drop-and-rescale path, has to
+// land where a plainly non-dispersive one does.
+void test_dispersion_unbiased() {
+	const int W = 48, H = 48;
+	RenderConfig cfg;
+	cfg.feature = "furnace";
+	cfg.width = W; cfg.height = H;
+	cfg.background = color(1, 1, 1);
+	camera cam = CameraFactory::build(cfg);
+
+	auto render = [&](real abbe) {
+		Scene sc;
+		auto world = std::make_shared<hittable_list>();
+		world->add(std::make_shared<sphere>(point3(0,0,0), (real)1.0,
+					std::make_shared<dielectric>((real)1.5, abbe)));
+		sc.world  = world;
+		sc.lights = std::make_shared<hittable_list>();
+
+		Framebuffer fb(W, H);
+		Renderer r(256, 12, 32);
+		r.verbose  = false;
+		r.spectral = true;
+		r.render(sc, fb, cam, cfg.background);
+		return measure(fb, W, H).mean;
+	};
+
+	double plain = render(0);          // never terminates
+	double huge  = render((real)1e5);  // terminates, but bends by nothing
+
+	check(plain > 0.1, "dispersion: the control render is not black",
+		  plain, 1.0, 0.9);
+	double rel = std::abs(huge - plain) / plain;
+	check(rel < 0.02,
+		  "dispersion: dropping two wavelengths and tripling the third is unbiased",
+		  huge, plain, 0.02 * plain);
+}
+
 // BDPT's t == 1 strategy splats into arbitrary pixels, so its accumulation
 // order is the one place the thread schedule could reach the image. It used to:
 // eight runs of `caustics` gave two distinct images. The order is now fixed by
@@ -527,6 +567,7 @@ void run_render_tests() {
 	test_closed_furnace();
 	test_spectral_furnace();
 	test_spectral_colour();
+	test_dispersion_unbiased();
 	test_ppm();
 
 	check_restir("cornell", 300, 10, 0.88, 1.15);

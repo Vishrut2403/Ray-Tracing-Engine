@@ -577,6 +577,9 @@ color Li(
 	const std::shared_ptr<env_light>& env,
 	const vec3& lambda
 ) {
+	// Collapses to the hero wavelength the first time a dispersive refraction
+	// sends the three of them different ways.
+	vec3  path_lambda = lambda;
 	ray   r    = initial_ray;
 	color L    (0,0,0);
 	color beta (1,1,1);
@@ -586,7 +589,7 @@ color Li(
 
 	for (int depth = 0; depth < max_depth; ++depth) {
 		hit_record rec;
-		rec.lambda = lambda;
+		rec.lambda = path_lambda;
 		if (!world->hit(r, interval(0.001, infinity), rec)) {
 			color Le = env ? env->Le(r.direction()) : background;
 			if (specular_bounce || depth == 0
@@ -620,7 +623,7 @@ color Li(
 			real light_pdf = lights->pdf_value(rec.p, wi);
 			if (light_pdf > 0.0) {
 				hit_record lr;
-				lr.lambda = lambda;
+				lr.lambda = path_lambda;
 				bool blocked = world->hit(ray(rec.p, wi, r.time()),
 										  interval(0.001, infinity), lr);
 				color Le2(0,0,0);
@@ -643,6 +646,8 @@ color Li(
 
 		BSDFSample bs = rec.mat_ptr->sample(r, rec);
 		if (bs.pdf <= 0.0) break;
+		if (bs.terminate_secondary)
+			path_lambda = vec3(path_lambda[0], path_lambda[0], path_lambda[0]);
 		last_bsdf_pdf = bs.pdf;
 		if (bs.is_delta)      { beta *= bs.f; specular_bounce = true; }
 		else if (bs.is_phase) { beta *= bs.f / bs.pdf; specular_bounce = false; }

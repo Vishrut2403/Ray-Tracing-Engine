@@ -12,6 +12,7 @@
 #include "materials/bsdf_sample.h"
 #include "materials/ggx_energy.h"
 #include "core/rgb_spectrum.h"
+#include "core/dispersion.h"
 
 class material {
 public:
@@ -132,8 +133,30 @@ public:
 class dielectric : public material {
 public:
 	real ir;
+	// Zero leaves the glass non-dispersive, which is what every existing scene
+	// asks for and what an RGB render can represent.
+	Dispersion dispersion;
 
-	dielectric(real index_of_refraction) : ir(index_of_refraction) {}
+	dielectric(real index_of_refraction, real abbe = 0)
+		: ir(index_of_refraction),
+		  dispersion(Dispersion::from_abbe(index_of_refraction, abbe)) {}
+
+private:
+	// Three wavelengths still travelling together, and a glass that would bend
+	// them apart. Returns the index for the hero wavelength and says whether
+	// the other two have to be dropped here.
+	void pick_ior(const hit_record& rec, real& n, bool& terminate) const {
+		terminate = false;
+		n = ir;
+		if (dispersion.b == 0 || rec.lambda[0] <= 0) return;
+
+		n = dispersion.ior(rec.lambda[0]);
+		// Already collapsed to one wavelength by an earlier refraction, so
+		// there is nothing left to drop and nothing to rescale.
+		terminate = rec.lambda[1] != rec.lambda[0];
+	}
+
+public:
 
 	// Clear glass has no albedo to show, so it gets the pale cast a solid view
 	// conventionally draws it with.
@@ -142,14 +165,22 @@ public:
 	}
 
 	virtual BSDFSample sample(const ray& wo, const hit_record& rec) const override {
+		real n; bool terminate;
+		pick_ior(rec, n, terminate);
+
 		vec3   ud    = unit_vector(wo.direction());
-		real ratio = rec.front_face ? (1.0 / ir) : ir;
+		real ratio = rec.front_face ? (1.0 / n) : n;
 		real cos_t = fmin(dot(-ud, rec.normal), 1.0);
 		real sin_t = std::sqrt(1.0 - cos_t * cos_t);
 		vec3 dir = (ratio * sin_t > 1.0 || schlick(cos_t, ratio) > random_double())
 				   ? reflect(ud, rec.normal)
 				   : refract(ud, rec.normal, ratio);
-		return { dir, color(1, 1, 1), 1.0, true };
+
+		// Three into one: the survivor carries the whole estimate, so it is
+		// worth three times as much. The film's 1/3 then cancels it exactly.
+		BSDFSample bs{ dir, color(1, 1, 1), 1.0, true };
+		if (terminate) { bs.f = color(3, 0, 0); bs.terminate_secondary = true; }
+		return bs;
 	}
 
 	virtual color  f  (const ray&, const vec3&, const hit_record&) const override { return color(0,0,0); }
@@ -157,7 +188,9 @@ public:
 
 	virtual BSDFSample sample_dir(const vec3& wo,
 								  const hit_record& rec) const override {
-		real ratio = rec.front_face ? (1.0 / ir) : ir;
+		real n; bool terminate;
+		pick_ior(rec, n, terminate);
+		real ratio = rec.front_face ? (1.0 / n) : n;
 		vec3   ud    = -wo;
 		real cos_t = fmin(dot(wo, rec.normal), 1.0);
 		real sin_t = std::sqrt(std::max<real>(0.0, 1.0 - cos_t * cos_t));
@@ -165,8 +198,10 @@ public:
 					   ? reflect(ud, rec.normal)
 					   : refract(ud, rec.normal, ratio);
 		dir = unit_vector(dir);
-		return { dir, color(1,1,1) / std::max<real>(std::abs(dot(dir, rec.normal)), 1e-9),
-				 1.0, true };
+		real inv_c = 1 / std::max<real>(std::abs(dot(dir, rec.normal)), 1e-9);
+		BSDFSample bs{ dir, color(1,1,1) * inv_c, 1.0, true };
+		if (terminate) { bs.f = color(3,0,0) * inv_c; bs.terminate_secondary = true; }
+		return bs;
 	}
 
 private:

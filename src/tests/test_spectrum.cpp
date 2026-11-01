@@ -4,6 +4,7 @@
 
 #include "tests/test_util.h"
 #include "core/spectrum.h"
+#include "core/dispersion.h"
 
 #include <cmath>
 #include <cstdio>
@@ -115,6 +116,44 @@ void test_flat_spectrum_round_trip() {
 	}
 }
 
+// Abbe numbers are how glass is actually catalogued, so the conversion to
+// Cauchy's coefficients is worth pinning: both defining relations are exact by
+// construction, and a sign slip in either breaks them visibly.
+void test_dispersion() {
+	struct { const char* name; double n_d, V; } glasses[] = {
+		{ "BK7",  1.5168, 64.17 },
+		{ "SF10", 1.7283, 28.53 },
+		{ "F2",   1.6200, 36.37 },
+	};
+
+	for (const auto& g : glasses) {
+		Dispersion d = Dispersion::from_abbe((real)g.n_d, (real)g.V);
+
+		double n_d = d.ior(kFraunhoferD * 1000);
+		double n_F = d.ior(kFraunhoferF * 1000);
+		double n_C = d.ior(kFraunhoferC * 1000);
+
+		check(std::abs(n_d - g.n_d) < 1e-4,
+			  std::string(g.name) + ": index at the d line", n_d, g.n_d, 1e-4);
+
+		double V = (n_d - 1) / (n_F - n_C);
+		check(std::abs(V - g.V) / g.V < 1e-3,
+			  std::string(g.name) + ": Abbe number recovered", V, g.V, 1e-3*g.V);
+
+		// Normal dispersion: blue bends more than red. The sign is the whole
+		// visible effect, so it gets its own check.
+		check(n_F > n_C,
+			  std::string(g.name) + ": blue refracts more than red",
+			  n_F - n_C, 1.0, 0.0);
+	}
+
+	// Zero Abbe is the opt-out, and has to be exactly constant.
+	Dispersion flat = Dispersion::from_abbe(1.5, 0);
+	check(flat.ior(400) == flat.ior(700) && flat.ior(550) == (real)1.5,
+		  "no Abbe number: the glass is exactly non-dispersive",
+		  (double)flat.ior(400), 1.5, 0.0);
+}
+
 }  // namespace
 
 void run_spectrum_tests() {
@@ -123,4 +162,5 @@ void run_spectrum_tests() {
 	test_equal_energy_is_neutral();
 	test_monochromatic_locus();
 	test_flat_spectrum_round_trip();
+	test_dispersion();
 }
